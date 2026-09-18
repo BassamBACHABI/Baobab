@@ -7,7 +7,7 @@ export default function AdminShipments() {
     <div className="space-y-8">
       <PageHeader
         title="Expéditions"
-        subtitle="Traitez les demandes d'expédition, calculez les frais et suivez l'acheminement jusqu'au Bénin."
+        subtitle="Traitez les demandes d'expédition par avion, calculez les frais et suivez l'acheminement jusqu'au Bénin (2 à 3 jours)."
       />
       <EmptyState
         icon={Ship}

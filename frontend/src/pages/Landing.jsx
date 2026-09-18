@@ -25,8 +25,8 @@ const STEPS = [
   },
   {
     icon: Plane,
-    title: "Expédition vers le Bénin",
-    text: "Demandez l'expédition, réglez les frais et suivez votre colis jusqu'à sa livraison au Bénin.",
+    title: "Livraison par avion",
+    text: "Réglez les frais d'expédition et recevez vos colis au Bénin par avion, en seulement 2 à 3 jours après l'envoi.",
   },
 ];
 
@@ -72,7 +72,8 @@ export default function Landing() {
               </h1>
               <p className="mt-5 max-w-xl text-base leading-relaxed text-muted-foreground">
                 Achetez où vous voulez en Europe, livrez à votre adresse de
-                réception, et laissez-nous acheminer vos colis jusqu'à vous.
+                réception, et laissez-nous acheminer vos colis
+                <span className="font-semibold text-foreground"> par avion, en 2 à 3 jours</span>.
                 Réception, pesée, expédition et suivi — tout au même endroit.
               </p>
               <div className="mt-8 flex flex-col gap-3 sm:flex-row">
@@ -100,15 +101,15 @@ export default function Landing() {
               </div>
               <div className="mt-6 flex items-center gap-2 text-sm text-muted-foreground">
                 <ShieldCheck className="h-4 w-4 text-accent" />
-                Suivi transparent · Tarifs affichés en EUR et FCFA
+                Livraison par avion en 2–3 jours · Tarifs en EUR et FCFA
               </div>
             </div>
 
             <div className="relative animate-fade-up">
               <div className="overflow-hidden rounded-3xl border border-border shadow-card">
                 <img
-                  src="https://images.pexels.com/photos/262353/pexels-photo-262353.jpeg?auto=compress&cs=tinysrgb&dpr=2&h=650&w=940"
-                  alt="Entrepôt logistique et colis prêts à l'expédition"
+                  src="https://images.unsplash.com/photo-1774698078446-59299e016718?crop=entropy&cs=srgb&fm=jpg&q=85&w=940&h=650&fit=crop"
+                  alt="Avion cargo en cours de chargement sur le tarmac"
                   className="h-full max-h-[420px] w-full object-cover"
                 />
               </div>

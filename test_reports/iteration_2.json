@@ -1,0 +1,27 @@
+{
+  "summary": "Full backend + frontend integration test of Baobab Cargo (Freight Forwarding, PROMPT 2). 24/24 pytest backend tests pass and 16/16 Playwright UI checks pass. Verified email/password JWT auth, registration trigger (profile + CLIENT role + forwarding CLB-XXXXXX), per-user isolation (awa 1 pkg / koffi 0 pkg / cross-client 404), RBAC via user_roles + has_role (CLIENT blocked on /admin/*, OPERATOR blocked on payments/cost-records/shipments, ADMIN full), seeded reference data with Decimal128 monetary values returned as strings, package weigh yielding volumetric=4.80 & billable=4.80, allowed vs illegal package transitions (RECEIVED->INSPECTED->STORED->READY_TO_SHIP OK, READY_TO_SHIP->DELIVERED=409), shipment creation with total_billable_weight_kg='4.80', tracking events readable by owning client only, client payment forced to PENDING, PaymentIn XOR validation (422), admin transition PAID sets paid_at. Google endpoint returns 400 without session_id and 401 with invalid one. Frontend: login/register/toggle/google-btn/protected-route redirects/customer-reference/Hub Lille/logout/token in localStorage all work.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {"ui_bugs": [], "integration_issues": [], "design_issues": []},
+  "test_report_links": [
+    "/app/backend/tests/backend_test.py",
+    "/app/test_reports/pytest/pytest_results.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "seed.py is not fully self-cleaning: shipments/payments/status_history persist across restarts, so repeated ad-hoc curls (e.g. attaching a package to koffi's forwarding_address) can pollute isolation. Consider guarding via reference/notes or exposing a test-reset endpoint for CI. In this run I had to manually delete stale non-seed packages (PKG-6985G6 attached to koffi, TEST_ pkgs) before isolation asserted cleanly.",
+    "GoogleSessionIn.session_id is Optional; combined with the header fallback (X-Session-ID) this is fine, but the docstring/model should mark it required-if-header-missing for clarity.",
+    "public_user() returns provider only if present; Google-registered users may lack password_hash — OK, but consider blocking POST /api/auth/login for provider!='password' to avoid confusing 401s.",
+    "server.py is >560 lines and mixes auth/reference/me/admin routes — consider splitting into routers by domain for maintainability.",
+    "PROTECTED /api/auth/logout requires a valid token (Depends(get_current_user)); a stale/expired token would 401 the logout and prevent cookie clearing. Consider making logout best-effort (no auth required)."
+  ],
+  "updated_files": [
+    "/app/backend/tests/backend_test.py"
+  ],
+  "success_rate": {"backend": "100% (24/24)", "frontend": "100% (16/16)"},
+  "test_credentials": "ADMIN bachabi.bassam@gmail.com/Admin#Baobab2026; OPERATOR operator@baobabcargo.app/Operator#2026; CLIENTS awa@example.com & koffi@example.com / Client#2026",
+  "seed_data_creation": "Test cleaned 3 stale non-seed packages + all shipments/payments/tracking/status_history for SHIPMENT/PAYMENT before running. Registration test creates a fresh uuid-suffixed CLIENT each run (harmless).",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Backend suite is at /app/backend/tests/backend_test.py; pytest.ini enforces -n 2 --dist loadscope, but this suite has ordering dependencies across TestPackageFlow -> TestShipmentFlow -> TestPayments so must run with `-n 0` (serial). All 24 pass serial. If koffi shows unexpected packages, it's stale data pollution from prior curls, not a code bug — clean via db.packages.delete_many({'merchant_name': {'$ne': 'Amazon FR'}}).",
+  "rca of the issue": "N/A — no bugs."
+}

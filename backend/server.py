@@ -87,6 +87,11 @@ async def login(body: LoginIn, request: Request):
     ident = f"{request.client.host if request.client else 'x'}:{email}"
     await check_lockout(ident)
     auth = await db.auth_users.find_one({"email": email})
+    if auth and not auth.get("password_hash"):
+        raise HTTPException(
+            status_code=401,
+            detail="Ce compte utilise la connexion Google. Utilisez « Continuer avec Google ».",
+        )
     if not auth or not verify_password(body.password, auth.get("password_hash") or ""):
         await record_failure(ident)
         raise HTTPException(status_code=401, detail="E-mail ou mot de passe incorrect.")
@@ -143,7 +148,8 @@ async def me(user=Depends(get_current_user)):
 
 
 @api.post("/auth/logout")
-async def logout(request: Request, response: Response, user=Depends(get_current_user)):
+async def logout(request: Request, response: Response):
+    # Best-effort : ne nécessite pas de jeton valide (un jeton expiré doit tout de même pouvoir se déconnecter).
     raw = request.cookies.get("session_token")
     if not raw:
         auth_header = request.headers.get("Authorization", "")

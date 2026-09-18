@@ -25,6 +25,17 @@ Marque retenue : **Baobab Cargo** (nom court « Baobab »).
 - Bleu profond #0B2046, accent terracotta #E56B3D, Plus Jakarta Sans, coins arrondis, espace blanc, mode clair/sombre.
 - Composants : boutons, cartes, badges de statut (StatusBadge, libellés FR), tableaux responsives, formulaires, toasts (sonner), squelettes (ListSkeleton), états vides (EmptyState), PageHeader.
 
+## Fait — Prompt 2 (2026-06 — Schéma Freight Forwarding + Auth + Google)
+- Backend MongoDB reproduisant les règles Postgres/RLS côté serveur : collections pour toutes les tables (profiles, user_roles séparé, customer_addresses, countries, logistic_hubs, forwarding_addresses, carriers, packages, package_items/photos, delivery_zones, tariffs, app_settings, shipments, shipment_packages, tracking_events, payments, cost_records, status_history, audit_log).
+- Montants en **Decimal128** exact (jamais float), renvoyés en chaîne. Index + unicité (customer_reference CLB-XXXXXX, references PKG/SHP, country code, user_roles).
+- Sécurité : `has_role()` serveur + isolation par user_id (CLIENT ne voit que ses données), RBAC (ADMIN complet, OPERATOR colis/photos mais NI payments NI cost_records, CLIENT bloqué sur /admin). Transitions de statut **serveur uniquement** (Package/Shipment/Payment) avec `status_history` + refus 409 ; `audit_log` pour tarifs/poids/coûts/paiements/statuts sensibles. Poids volumétrique = L×l×h / diviseur (5000), facturable = max(réel, volumétrique).
+- Auth : email/mot de passe (JWT Bearer) + **Emergent Google sign-in** (échange session serveur, cookie session_token, upsert + trigger d'inscription CLIENT + forwarding address). Aucun ADMIN via inscription publique. Login bloqué proprement pour comptes Google ; logout best-effort.
+- Trigger d'inscription : profil + rôle CLIENT + forwarding_address (CLB-XXXXXX) créés automatiquement.
+- Seed : FR + BJ, hub Lille, transporteur Baobab Line, 2 zones, 4 tranches de tarif AIR ; réglages `eur_xof_rate=655.957`, `volumetric_divisor=5000`, `storage_free_days=14`, `air_delivery_days_min=2`, `air_delivery_days_max=3`, `default_transport_mode=AIR`. Comptes de test : 1 ADMIN, 1 OPERATOR, 2 CLIENTS (voir test_credentials.md).
+- Frontend auth : page /login (email/mot de passe + « Continuer avec Google »), AuthContext, ProtectedRoute (/client, /admin staff), AuthCallback OAuth, déconnexion, profil client affichant la référence + adresse du hub.
+- **Mode principal = AÉRIEN**, réception en 2–3 jours (textes landing/expéditions mis à jour, réglages en base).
+- Testing agent : **100 % (24/24 backend, 16/16 frontend)**, aucun bug.
+
 ## Fait — Prompt 1 (2026-06 — Fondations UI/Nav/PWA)
 - Thème light/dark (tokens HSL) + typographie Plus Jakarta Sans + utilitaires d'ombres/animations.
 - Espace client : sidebar desktop + bottom nav mobile (Accueil, Mes colis, Expéditions, Profil), pages provisoires avec états vides.

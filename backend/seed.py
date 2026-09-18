@@ -32,6 +32,9 @@ DEFAULT_SETTINGS = {
     "eur_xof_rate": ("655.957", "num"),
     "volumetric_divisor": ("5000", "int"),
     "storage_free_days": ("14", "int"),
+    "air_delivery_days_min": ("2", "int"),
+    "air_delivery_days_max": ("3", "int"),
+    "default_transport_mode": ("AIR", "str"),
 }
 
 
@@ -39,7 +42,12 @@ async def seed_settings():
     for key, (value, kind) in DEFAULT_SETTINGS.items():
         if await db.app_settings.find_one({"key": key}):
             continue
-        stored = to_num(value) if kind == "num" else int(value)
+        if kind == "num":
+            stored = to_num(value)
+        elif kind == "int":
+            stored = int(value)
+        else:
+            stored = value
         await db.app_settings.insert_one(
             {"key": key, "value": stored, "kind": kind, "updated_at": now_utc()}
         )
