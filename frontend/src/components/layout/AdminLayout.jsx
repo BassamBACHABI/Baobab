@@ -13,7 +13,7 @@ import { cn } from "@/lib/utils";
 import { Logo } from "@/components/brand/Logo";
 import { ThemeToggle } from "@/components/theme/ThemeToggle";
 import { Button } from "@/components/ui/button";
-import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
+import { Sheet, SheetContent, SheetTrigger, SheetTitle, SheetDescription } from "@/components/ui/sheet";
 
 const NAV = [
   { label: "Tableau de bord", icon: LayoutDashboard, to: "/admin", end: true, id: "dashboard" },
@@ -100,6 +100,10 @@ export default function AdminLayout() {
               side="left"
               className="w-72 border-none bg-[#0B2046] p-4 text-white"
             >
+              <SheetTitle className="sr-only">Menu du back-office</SheetTitle>
+              <SheetDescription className="sr-only">
+                Navigation entre les sections du back-office Baobab Cargo.
+              </SheetDescription>
               <div className="mb-6 mt-2 px-2">
                 <Logo textClassName="text-white" />
               </div>
