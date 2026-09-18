@@ -1,0 +1,29 @@
+{
+  "summary": "PROMPT 3 (auth/roles/profile) full backend + frontend verification. Extended /app/backend/tests/backend_test.py with 4 new classes (Forgot/Reset, AppleGuards, ProfileAndAddresses, SocialIdentity). Result: 34/34 pytest tests pass (serial -n 0), 0 regressions. Verified: /auth/forgot-password returns same generic 200 for existing AND non-existing emails (no user enumeration); backend logs the 'LIEN DE RÉINITIALISATION' line for real password accounts; /auth/reset-password rejects bogus tokens with 400 and consumes valid tokens (single-use, second attempt returns 400); full cycle awa reset -> login with new pw -> restore original 'Client#2026' via a second forgot cycle (awa password restored, verified via login 200). Apple guards: GET /auth/apple/start -> 503 (APPLE_CLIENT_ID unset), POST /auth/apple/callback with missing id_token/state -> 400. Profile: GET/PUT /me/profile persists first_name/last_name/phone; addresses: POST /me/addresses stores Bénin delivery address and koffi cannot see awa's TEST address (strict user_id isolation). Social identity: /auth/google/session with bogus id -> 401 and admin retains ADMIN role (roles live in separate user_roles collection, not overwritten). RBAC re-verified (CLIENT->/admin/* 403, OPERATOR blocked on payments/cost-records/shipments, ADMIN full). Frontend (Playwright, 1440x900): /login shows google-login-btn, apple-login-btn, forgot-link and register toggle; /forgot-password submits and shows forgot-sent; /reset-password without token shows reset-invalid, with ?token shows the form; logged-out /client and /admin both redirect to /login; CLIENT visiting /admin is redirected to /client; /client/profile edits phone (toast 'Profil mis à jour', persists across reload), adds Bénin address (visible in addresses-list), logout-btn returns to /login.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {"ui_bugs": [], "integration_issues": [], "design_issues": []},
+  "test_report_links": [
+    "/app/backend/tests/backend_test.py",
+    "/app/test_reports/pytest/pytest_results.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "server.py is 706 lines and mixes auth/profile/reference/me/admin — recommend splitting into routers by domain (routers/auth.py, routers/me.py, routers/admin.py) for maintainability.",
+    "/api/auth/forgot-password logs the reset URL to backend stdout only (logger.info 'LIEN DE RÉINITIALISATION'). Fine for MVP but in production the token must be delivered by email (SES/SendGrid) — currently there is no email transport wired up.",
+    "password_reset_tokens: TTL index expires_at should be present (seed.py claims it is); token single-use is enforced by 'used' flag — good. Consider also invalidating older unused tokens for a user when a new one is issued (currently multiple concurrent tokens can exist).",
+    "ForgotIn uses EmailStr — a syntactically invalid email returns 422 (leaks that the API validates format); acceptable but note 422 vs 200 is a weak signal.",
+    "Apple callback (POST /auth/apple/callback) returns generic 401 'Jeton d'identité Apple invalide' — good; ensure_social_user is correctly keyed on (provider, provider_sub) with email fallback, then updates provider/provider_sub on the existing doc without touching user_roles, so seeded ADMIN role is preserved. Verified in code review.",
+    "AddressIn.country is a free-form str — recommend Literal['Bénin'] or ISO code enum to prevent typos ('Benin' vs 'Bénin') from creating inconsistent records.",
+    "customer_addresses collection has no index on user_id; add an index for /me/addresses at scale."
+  ],
+  "updated_files": [
+    "/app/backend/tests/backend_test.py"
+  ],
+  "success_rate": {"backend": "100% (34/34)", "frontend": "100% (all critical flows pass)"},
+  "test_credentials": "ADMIN bachabi.bassam@gmail.com/Admin#Baobab2026; OPERATOR operator@baobabcargo.app/Operator#2026; CLIENTS awa@example.com & koffi@example.com / Client#2026 (awa password restored after reset cycle test — verified via login 200).",
+  "seed_data_creation": "Cleaned stale non-seed packages / shipments / payments / status_history / prior TEST address before running (same as iteration_2). Registration test creates a fresh uuid-suffixed CLIENT each run. Profile edit test on awa leaves phone set to +229<random 8 digits>; harmless.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Backend suite at /app/backend/tests/backend_test.py must run serial (-n 0) because TestPackageFlow -> TestShipmentFlow -> TestPayments share state. Before running, purge stale non-seed data: db.packages.delete_many({merchant_name:{$ne:'Amazon FR'}}), db.shipments.delete_many({}), db.payments.delete_many({}), db.status_history.delete_many({entity_type:{$in:['SHIPMENT','PAYMENT']}}). The forgot-password test greps /var/log/supervisor/backend.err.log and .out.log for 'LIEN DE RÉINITIALISATION' — if supervisor log rotation kicks in and truncates, that test may skip the assertion. APPLE_CLIENT_ID is intentionally unset; if it is later configured, TestAppleGuards.test_apple_start_unconfigured_503 will need updating (start returning 200 + authorization_url).",
+  "rca of the issue": "N/A — no bugs found for PROMPT 3."
+}

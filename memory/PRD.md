@@ -25,6 +25,15 @@ Marque retenue : **Baobab Cargo** (nom court « Baobab »).
 - Bleu profond #0B2046, accent terracotta #E56B3D, Plus Jakarta Sans, coins arrondis, espace blanc, mode clair/sombre.
 - Composants : boutons, cartes, badges de statut (StatusBadge, libellés FR), tableaux responsives, formulaires, toasts (sonner), squelettes (ListSkeleton), états vides (EmptyState), PageHeader.
 
+## Fait — Prompt 3 (2026-06 — Auth, rôles & profil)
+- Mot de passe oublié/réinitialisation (tokens à usage unique, TTL 1h ; lien loggé côté serveur — e-mail à câbler plus tard).
+- **Sign in with Apple (web)** : /auth/apple/start + /auth/apple/callback (form_post), vérification serveur du jeton (JWKS RS256, aud=Service ID, iss, exp, nonce). Nécessite `APPLE_CLIENT_ID` + Return URL enregistrée ; 503 tant que non configuré.
+- Clé d'identité sociale = `sub` (provider+provider_sub), pas l'e-mail. Google conserve les rôles (table séparée) → ADMIN préservé.
+- Redirection par rôle (CLIENT→/client, ADMIN/OPERATOR→/admin) ; routes protégées serveur (`has_role`).
+- Profil éditable (prénom/nom/téléphone) + gestion des adresses de livraison au Bénin (ville, quartier/adresse, repère), isolées par utilisateur.
+- Frontend : /login (Google + Apple + mot de passe oublié), /forgot-password, /reset-password, /auth/apple-return, profil complet.
+- Testing agent : **100 % (34/34 backend, frontend OK)**, aucun bug. ⚠️ Apple réel non testable (Service ID requis) ; e-mail de reset non câblé (MOCKED : lien loggé).
+
 ## Fait — Prompt 2 (2026-06 — Schéma Freight Forwarding + Auth + Google)
 - Backend MongoDB reproduisant les règles Postgres/RLS côté serveur : collections pour toutes les tables (profiles, user_roles séparé, customer_addresses, countries, logistic_hubs, forwarding_addresses, carriers, packages, package_items/photos, delivery_zones, tariffs, app_settings, shipments, shipment_packages, tracking_events, payments, cost_records, status_history, audit_log).
 - Montants en **Decimal128** exact (jamais float), renvoyés en chaîne. Index + unicité (customer_reference CLB-XXXXXX, references PKG/SHP, country code, user_roles).

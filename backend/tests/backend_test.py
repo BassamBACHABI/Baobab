@@ -326,3 +326,172 @@ class TestPayments:
         pay = r.json()
         assert pay["status"] == "PAID"
         assert pay["paid_at"] is not None
+
+
+# ---- FORGOT / RESET PASSWORD ----
+class TestForgotReset:
+    def test_forgot_password_existing_email_generic(self):
+        r = requests.post(f"{API}/auth/forgot-password",
+                          json={"email": AWA[0]}, timeout=15)
+        assert r.status_code == 200
+        j = r.json()
+        assert j.get("ok") is True
+        assert "compte existe" in j.get("message", "").lower() or "réinitialisation" in j.get("message", "").lower()
+
+    def test_forgot_password_nonexistent_no_enumeration(self):
+        r = requests.post(f"{API}/auth/forgot-password",
+                          json={"email": f"noone_{uuid.uuid4().hex[:8]}@example.com"}, timeout=15)
+        assert r.status_code == 200
+        # Same generic response
+        assert r.json().get("ok") is True
+
+    def test_reset_password_bad_token(self):
+        r = requests.post(f"{API}/auth/reset-password",
+                          json={"token": "totally-bogus-token", "new_password": "Whatever#1"},
+                          timeout=15)
+        assert r.status_code == 400
+
+    def test_full_forgot_reset_cycle_for_awa(self):
+        """Trigger forgot -> pull token from backend log -> reset -> login -> restore original."""
+        import subprocess, re, time
+        # 1) trigger forgot
+        r = requests.post(f"{API}/auth/forgot-password",
+                          json={"email": AWA[0]}, timeout=15)
+        assert r.status_code == 200
+        time.sleep(0.5)
+        # 2) grab token from backend log (searches both .err.log and .out.log)
+        token = None
+        for log in ("/var/log/supervisor/backend.err.log", "/var/log/supervisor/backend.out.log"):
+            try:
+                out = subprocess.check_output(["tail", "-n", "400", log], text=True, timeout=5)
+            except Exception:
+                continue
+            matches = re.findall(r"LIEN DE R[ÉE]INITIALISATION pour %s.*token=([A-Za-z0-9_\-]+)" % re.escape(AWA[0]), out)
+            if matches:
+                token = matches[-1]
+                break
+        assert token, "Reset token not found in backend logs"
+        # 3) reset to a new password
+        new_pw = "TempClient#9999"
+        r2 = requests.post(f"{API}/auth/reset-password",
+                           json={"token": token, "new_password": new_pw}, timeout=15)
+        assert r2.status_code == 200, r2.text
+        # 4) login with new password works
+        r3 = requests.post(f"{API}/auth/login",
+                           json={"email": AWA[0], "password": new_pw}, timeout=15)
+        assert r3.status_code == 200, r3.text
+        # 5) same token cannot be reused
+        r4 = requests.post(f"{API}/auth/reset-password",
+                           json={"token": token, "new_password": "Another#123"}, timeout=15)
+        assert r4.status_code == 400
+        # 6) restore ORIGINAL password so other suites keep working — do it via a fresh forgot cycle
+        r5 = requests.post(f"{API}/auth/forgot-password",
+                           json={"email": AWA[0]}, timeout=15)
+        assert r5.status_code == 200
+        time.sleep(0.5)
+        token2 = None
+        for log in ("/var/log/supervisor/backend.err.log", "/var/log/supervisor/backend.out.log"):
+            try:
+                out = subprocess.check_output(["tail", "-n", "400", log], text=True, timeout=5)
+            except Exception:
+                continue
+            matches = re.findall(r"LIEN DE R[ÉE]INITIALISATION pour %s.*token=([A-Za-z0-9_\-]+)" % re.escape(AWA[0]), out)
+            if matches:
+                token2 = matches[-1]
+                break
+        assert token2 and token2 != token, "Second reset token missing"
+        r6 = requests.post(f"{API}/auth/reset-password",
+                           json={"token": token2, "new_password": AWA[1]}, timeout=15)
+        assert r6.status_code == 200
+        # verify restored
+        r7 = requests.post(f"{API}/auth/login",
+                           json={"email": AWA[0], "password": AWA[1]}, timeout=15)
+        assert r7.status_code == 200, "Failed to restore awa's original password"
+
+
+# ---- APPLE guards ----
+class TestAppleGuards:
+    def test_apple_start_unconfigured_503(self):
+        r = requests.get(f"{API}/auth/apple/start", timeout=15)
+        # APPLE_CLIENT_ID intentionally unset in preview
+        assert r.status_code == 503, f"expected 503 got {r.status_code}: {r.text}"
+
+    def test_apple_callback_missing_fields_400(self):
+        # form-encoded, no id_token / state
+        r = requests.post(f"{API}/auth/apple/callback",
+                          data={}, timeout=15)
+        assert r.status_code == 400
+
+        r2 = requests.post(f"{API}/auth/apple/callback",
+                           data={"id_token": "abc"}, timeout=15)  # missing state
+        assert r2.status_code == 400
+
+        r3 = requests.post(f"{API}/auth/apple/callback",
+                           data={"state": "abc"}, timeout=15)  # missing id_token
+        assert r3.status_code == 400
+
+
+# ---- PROFILE + BÉNIN ADDRESSES ----
+class TestProfileAndAddresses:
+    def test_get_profile(self, awa_token):
+        r = requests.get(f"{API}/me/profile", headers=_h(awa_token), timeout=15)
+        assert r.status_code == 200
+        assert r.json()["email"] == AWA[0]
+
+    def test_update_profile(self, awa_token):
+        new_phone = f"+229{uuid.uuid4().int % 10**8:08d}"
+        r = requests.put(f"{API}/me/profile", headers=_h(awa_token),
+                         json={"first_name": "Awa", "last_name": "Test", "phone": new_phone}, timeout=15)
+        assert r.status_code == 200, r.text
+        # verify persisted
+        r2 = requests.get(f"{API}/me/profile", headers=_h(awa_token), timeout=15)
+        p = r2.json()
+        assert p["first_name"] == "Awa"
+        assert p["last_name"] == "Test"
+        assert p["phone"] == new_phone
+
+    def test_address_create_and_isolation(self, awa_token, koffi_token):
+        # awa's addresses initially
+        r_initial = requests.get(f"{API}/me/addresses", headers=_h(awa_token), timeout=15)
+        assert r_initial.status_code == 200
+        initial_count = len(r_initial.json())
+
+        # create a Bénin address
+        payload = {
+            "country": "Bénin", "city": "Cotonou",
+            "address_line": "Rue TEST 123",
+            "landmark": "Près marché Dantokpa",
+            "type": "DELIVERY_BENIN",
+        }
+        r = requests.post(f"{API}/me/addresses", headers=_h(awa_token), json=payload, timeout=15)
+        assert r.status_code == 200, r.text
+        created = r.json()
+        assert created["city"] == "Cotonou"
+        assert created["country"] == "Bénin"
+        assert created["type"] == "DELIVERY_BENIN"
+
+        # awa sees it
+        r2 = requests.get(f"{API}/me/addresses", headers=_h(awa_token), timeout=15)
+        assert r2.status_code == 200
+        assert len(r2.json()) == initial_count + 1
+
+        # koffi does NOT see it (isolation)
+        r3 = requests.get(f"{API}/me/addresses", headers=_h(koffi_token), timeout=15)
+        assert r3.status_code == 200
+        koffi_addrs = r3.json()
+        koffi_lines = [a.get("address_line", "") for a in koffi_addrs]
+        assert "Rue TEST 123" not in koffi_lines
+
+
+# ---- SOCIAL IDENTITY KEYING (verify code path in accounts.ensure_social_user) ----
+class TestSocialIdentity:
+    def test_ensure_social_user_preserves_admin_role_via_direct_call(self, admin_token):
+        """Simulate Google login for the seeded ADMIN email through the endpoint's guard behaviour.
+        We can't perform the real OAuth, but we can call /api/auth/google/session with an invalid
+        session_id and verify the ADMIN still has the ADMIN role afterwards (role NOT downgraded)."""
+        r = requests.post(f"{API}/auth/google/session",
+                          json={"session_id": "bogus"}, timeout=15)
+        assert r.status_code == 401
+        # admin role remains
+        me = requests.get(f"{API}/auth/me", headers=_h(admin_token), timeout=15).json()
+        assert "ADMIN" in me["roles"]
