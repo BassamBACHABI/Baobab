@@ -19,8 +19,14 @@ const GoogleIcon = (props) => (
   </svg>
 );
 
+const AppleIcon = (props) => (
+  <svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor" {...props}>
+    <path d="M16.37 12.88c-.03-2.6 2.12-3.85 2.22-3.91-1.21-1.77-3.09-2.01-3.76-2.04-1.6-.16-3.12.94-3.93.94-.81 0-2.06-.92-3.39-.9-1.74.03-3.35 1.01-4.25 2.57-1.81 3.14-.46 7.79 1.3 10.34.86 1.25 1.88 2.65 3.22 2.6 1.29-.05 1.78-.83 3.34-.83 1.56 0 2 .83 3.37.81 1.39-.03 2.27-1.27 3.12-2.53.98-1.45 1.39-2.85 1.41-2.92-.03-.01-2.71-1.04-2.74-4.13Zm-2.57-7.59c.71-.86 1.19-2.06 1.06-3.25-1.02.04-2.26.68-2.99 1.54-.66.76-1.23 1.98-1.08 3.15 1.14.09 2.3-.58 3.01-1.44Z" />
+  </svg>
+);
+
 export default function Login() {
-  const { user, login, register, loginWithGoogle } = useAuth();
+  const { user, login, register, loginWithGoogle, loginWithApple } = useAuth();
   const navigate = useNavigate();
   const [mode, setMode] = useState("login");
   const [loading, setLoading] = useState(false);
@@ -73,15 +79,25 @@ export default function Login() {
           </div>
 
           <div className="rounded-2xl border border-border bg-card p-6 shadow-card sm:p-7">
-            <Button
-              type="button"
-              variant="outline"
-              onClick={loginWithGoogle}
-              data-testid="google-login-btn"
-              className="h-11 w-full rounded-xl border-border"
-            >
-              <GoogleIcon className="mr-2" /> Continuer avec Google
-            </Button>
+            <div className="space-y-2.5">
+              <Button
+                type="button"
+                variant="outline"
+                onClick={loginWithGoogle}
+                data-testid="google-login-btn"
+                className="h-11 w-full rounded-xl border-border"
+              >
+                <GoogleIcon className="mr-2" /> Continuer avec Google
+              </Button>
+              <Button
+                type="button"
+                onClick={loginWithApple}
+                data-testid="apple-login-btn"
+                className="h-11 w-full rounded-xl bg-black text-white hover:bg-black/90 dark:bg-white dark:text-black dark:hover:bg-white/90"
+              >
+                <AppleIcon className="mr-2" /> Continuer avec Apple
+              </Button>
+            </div>
 
             <div className="my-5 flex items-center gap-3">
               <div className="h-px flex-1 bg-border" />
@@ -116,6 +132,14 @@ export default function Login() {
                   <Input id="password" type="password" required data-testid="login-password" value={form.password} onChange={set("password")} className="h-11 rounded-xl pl-10" placeholder="••••••••" />
                 </div>
               </div>
+
+              {mode === "login" && (
+                <div className="text-right">
+                  <Link to="/forgot-password" data-testid="forgot-link" className="text-xs font-medium text-accent hover:underline">
+                    Mot de passe oublié ?
+                  </Link>
+                </div>
+              )}
 
               <Button type="submit" disabled={loading} data-testid="login-submit" className="h-11 w-full rounded-xl bg-accent text-white hover:bg-[#D45A2C]">
                 {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : mode === "login" ? "Se connecter" : "Créer mon compte"}

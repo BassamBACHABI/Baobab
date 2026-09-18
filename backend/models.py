@@ -17,6 +17,15 @@ class LoginIn(BaseModel):
     password: str
 
 
+class ForgotIn(BaseModel):
+    email: EmailStr
+
+
+class ResetIn(BaseModel):
+    token: str
+    new_password: str = Field(min_length=6)
+
+
 class GoogleSessionIn(BaseModel):
     session_id: Optional[str] = None
 

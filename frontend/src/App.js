@@ -12,6 +12,9 @@ import AuthCallback from "@/components/auth/AuthCallback";
 
 import Landing from "@/pages/Landing";
 import Login from "@/pages/Login";
+import ForgotPassword from "@/pages/ForgotPassword";
+import ResetPassword from "@/pages/ResetPassword";
+import AppleReturn from "@/pages/AppleReturn";
 import NotFound from "@/pages/NotFound";
 import ClientHome from "@/pages/client/ClientHome";
 import ClientParcels from "@/pages/client/ClientParcels";
@@ -33,6 +36,9 @@ function AppRoutes() {
     <Routes>
       <Route path="/" element={<Landing />} />
       <Route path="/login" element={<Login />} />
+      <Route path="/forgot-password" element={<ForgotPassword />} />
+      <Route path="/reset-password" element={<ResetPassword />} />
+      <Route path="/auth/apple-return" element={<AppleReturn />} />
 
       <Route element={<ProtectedRoute />}>
         <Route path="/client" element={<ClientLayout />}>

@@ -17,13 +17,9 @@ export function AuthProvider({ children }) {
   }, []);
 
   useEffect(() => {
-    // CRITICAL: retour d'OAuth Google -> AuthCallback fait l'échange, on ne vérifie pas ici.
+    // Retour d'OAuth Google -> AuthCallback fait l'échange, on ne vérifie pas ici.
     if (window.location.hash?.includes("session_id=")) return;
-    const token = localStorage.getItem("baobab_token");
-    if (!token) {
-      setUser(null);
-      return;
-    }
+    // Vérifie la session via /auth/me (jeton Bearer localStorage OU cookie de session).
     checkAuth();
   }, [checkAuth]);
 
@@ -54,6 +50,15 @@ export function AuthProvider({ children }) {
     window.location.href = `https://auth.emergentagent.com/?redirect=${encodeURIComponent(redirectUrl)}`;
   };
 
+  const loginWithApple = async () => {
+    const { data } = await api.get("/auth/apple/start");
+    window.location.href = data.authorization_url;
+  };
+
+  const forgotPassword = (email) => api.post("/auth/forgot-password", { email });
+  const resetPassword = (token, new_password) =>
+    api.post("/auth/reset-password", { token, new_password });
+
   const logout = async () => {
     try {
       await api.post("/auth/logout");
@@ -66,7 +71,7 @@ export function AuthProvider({ children }) {
 
   return (
     <AuthContext.Provider
-      value={{ user, setUser, login, register, logout, loginWithGoogle, handleGoogleCallback }}
+      value={{ user, setUser, login, register, logout, loginWithGoogle, loginWithApple, forgotPassword, resetPassword, handleGoogleCallback }}
     >
       {children}
     </AuthContext.Provider>

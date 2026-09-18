@@ -47,6 +47,7 @@ async def create_account(
     phone: str | None = None,
     role: str = "CLIENT",
     provider: str = "password",
+    provider_sub: str | None = None,
     with_forwarding: bool = True,
     name: str | None = None,
     picture: str | None = None,
@@ -68,6 +69,7 @@ async def create_account(
             "name": display,
             "picture": picture,
             "provider": provider,
+            "provider_sub": provider_sub,
             "created_at": now_utc(),
         }
     )
@@ -99,27 +101,35 @@ async def create_account(
     return uid
 
 
-async def ensure_google_user(email: str, name: str, picture: str | None):
-    """Upsert d'un utilisateur Google ; déclenche le trigger d'inscription si nouveau."""
-    email = email.strip().lower()
-    existing = await db.auth_users.find_one({"email": email})
+async def ensure_social_user(provider: str, sub: str, email: str | None, name: str | None, picture: str | None = None):
+    """Upsert d'un compte social — clé d'identité = (provider, sub), pas l'e-mail.
+    Déclenche le trigger d'inscription (profil + rôle CLIENT + forwarding_address) si nouveau."""
+    email = (email or "").strip().lower()
+    existing = None
+    if sub:
+        existing = await db.auth_users.find_one({"provider": provider, "provider_sub": sub})
+    if not existing and email:
+        existing = await db.auth_users.find_one({"email": email})
     if existing:
-        await db.auth_users.update_one(
-            {"_id": existing["_id"]},
-            {"$set": {"name": name, "picture": picture, "provider": "google"}},
-        )
+        patch = {"provider": provider, "provider_sub": sub}
+        if name:
+            patch["name"] = name
+        if picture:
+            patch["picture"] = picture
+        await db.auth_users.update_one({"_id": existing["_id"]}, {"$set": patch})
         return str(existing["_id"])
     parts = (name or "").split(" ", 1)
     first = parts[0] if parts else ""
     last = parts[1] if len(parts) > 1 else ""
+    if not email:
+        # Apple peut masquer l'e-mail (relais privé absent) : identifiant interne stable.
+        email = f"{provider}_{sub}@users.baobabcargo.app"
     return await create_account(
-        email=email,
-        password=None,
-        first_name=first,
-        last_name=last,
-        role="CLIENT",
-        provider="google",
-        with_forwarding=True,
-        name=name,
-        picture=picture,
+        email=email, password=None, first_name=first, last_name=last,
+        role="CLIENT", provider=provider, provider_sub=sub,
+        with_forwarding=True, name=name, picture=picture,
     )
+
+
+async def ensure_google_user(email: str, name: str, picture: str | None, sub: str | None = None):
+    return await ensure_social_user("google", sub or email, email, name, picture)

@@ -1,10 +1,16 @@
 import os
 import asyncio
 import logging
+import secrets
 from decimal import Decimal
+from datetime import timezone, timedelta
+from urllib.parse import urlencode
 
 import requests
+import jwt
+from jwt import PyJWKClient
 from fastapi import FastAPI, APIRouter, Depends, HTTPException, Request, Response
+from fastapi.responses import RedirectResponse
 from starlette.middleware.cors import CORSMiddleware
 
 from db import db
@@ -13,13 +19,13 @@ from models import (
     RegisterIn, LoginIn, GoogleSessionIn, ProfileUpdate, AddressIn,
     CountryIn, HubIn, CarrierIn, ZoneIn, TariffIn, SettingIn,
     PackageIn, WeighIn, PackageItemIn, TransitionIn, ShipmentIn, TrackingIn,
-    PaymentIn, CostIn,
+    PaymentIn, CostIn, ForgotIn, ResetIn,
 )
 from security import (
-    verify_password, create_access_token, get_current_user, require_roles,
+    verify_password, hash_password, create_access_token, get_current_user, require_roles,
     check_lockout, record_failure, clear_attempts, is_admin, is_staff,
 )
-from accounts import create_account, ensure_google_user, gen_reference
+from accounts import create_account, ensure_google_user, ensure_social_user, gen_reference
 from statemachine import (
     transition_status, write_audit, STATUS_LABELS,
     PACKAGE_TRANSITIONS, SHIPMENT_TRANSITIONS, PAYMENT_TRANSITIONS,
@@ -33,6 +39,20 @@ app = FastAPI(title="Baobab Cargo API")
 api = APIRouter(prefix="/api")
 
 EMERGENT_SESSION_URL = "https://demobackend.emergentagent.com/auth/v1/env/oauth/session-data"
+
+APPLE_CLIENT_ID = os.environ.get("APPLE_CLIENT_ID", "")
+APPLE_REDIRECT_URI = os.environ.get("APPLE_REDIRECT_URI", "")
+FRONTEND_URL = os.environ.get("FRONTEND_URL", "")
+APPLE_ISSUER = "https://appleid.apple.com"
+
+_jwks_client = None
+
+
+def _apple_jwks():
+    global _jwks_client
+    if _jwks_client is None:
+        _jwks_client = PyJWKClient("https://appleid.apple.com/auth/keys")
+    return _jwks_client
 
 
 # ============ Helpers ============
@@ -121,11 +141,11 @@ async def google_session(body: GoogleSessionIn, request: Request, response: Resp
     except Exception:
         raise HTTPException(status_code=401, detail="Session Google invalide ou expirée.")
 
-    uid = await ensure_google_user(
-        email=data["email"], name=data.get("name", ""), picture=data.get("picture")
+    uid = await ensure_social_user(
+        provider="google", sub=str(data.get("id") or data["email"]),
+        email=data["email"], name=data.get("name", ""), picture=data.get("picture"),
     )
     session_token = data["session_token"]
-    from datetime import timedelta
     await db.user_sessions.insert_one(
         {
             "user_id": uid,
@@ -159,6 +179,111 @@ async def logout(request: Request, response: Response):
         await db.user_sessions.delete_one({"session_token": raw})
     response.delete_cookie("session_token", path="/")
     return {"ok": True}
+
+
+# ============ MOT DE PASSE OUBLIÉ ============
+@api.post("/auth/forgot-password")
+async def forgot_password(body: ForgotIn):
+    email = body.email.strip().lower()
+    auth = await db.auth_users.find_one({"email": email})
+    if auth and auth.get("password_hash"):
+        token = secrets.token_urlsafe(32)
+        await db.password_reset_tokens.insert_one({
+            "token": token, "user_id": str(auth["_id"]),
+            "expires_at": now_utc() + timedelta(hours=1), "used": False, "created_at": now_utc(),
+        })
+        logger.info("LIEN DE RÉINITIALISATION pour %s : %s/reset-password?token=%s", email, FRONTEND_URL, token)
+    # Réponse générique (ne révèle pas l'existence du compte)
+    return {"ok": True, "message": "Si un compte existe, un lien de réinitialisation a été envoyé."}
+
+
+@api.post("/auth/reset-password")
+async def reset_password(body: ResetIn):
+    rec = await db.password_reset_tokens.find_one({"token": body.token})
+    if not rec or rec.get("used"):
+        raise HTTPException(status_code=400, detail="Lien invalide ou déjà utilisé.")
+    exp = rec["expires_at"]
+    if exp.tzinfo is None:
+        exp = exp.replace(tzinfo=timezone.utc)
+    if exp < now_utc():
+        raise HTTPException(status_code=400, detail="Lien expiré. Veuillez en demander un nouveau.")
+    await db.auth_users.update_one({"_id": oid(rec["user_id"])}, {"$set": {"password_hash": hash_password(body.new_password)}})
+    await db.password_reset_tokens.update_one({"_id": rec["_id"]}, {"$set": {"used": True}})
+    return {"ok": True}
+
+
+# ============ SIGN IN WITH APPLE (web, vérification serveur du jeton) ============
+@api.get("/auth/apple/start")
+async def apple_start():
+    if not APPLE_CLIENT_ID:
+        raise HTTPException(status_code=503, detail="La connexion Apple n'est pas encore configurée.")
+    state = secrets.token_urlsafe(32)
+    nonce = secrets.token_urlsafe(32)
+    await db.apple_states.insert_one({
+        "state": state, "nonce": nonce, "expires_at": now_utc() + timedelta(minutes=10),
+    })
+    params = {
+        "client_id": APPLE_CLIENT_ID, "redirect_uri": APPLE_REDIRECT_URI,
+        "response_type": "code id_token", "response_mode": "form_post",
+        "scope": "name email", "state": state, "nonce": nonce,
+    }
+    return {"authorization_url": "https://appleid.apple.com/auth/authorize?" + urlencode(params)}
+
+
+@api.post("/auth/apple/callback")
+async def apple_callback(request: Request):
+    form = await request.form()
+    id_token = form.get("id_token")
+    state = form.get("state")
+    if not id_token or not state:
+        raise HTTPException(status_code=400, detail="Réponse Apple incomplète")
+
+    tx = await db.apple_states.find_one_and_delete({"state": state})
+    if not tx:
+        raise HTTPException(status_code=400, detail="Paramètre state invalide ou déjà utilisé")
+    exp = tx["expires_at"]
+    if exp.tzinfo is None:
+        exp = exp.replace(tzinfo=timezone.utc)
+    if exp < now_utc():
+        raise HTTPException(status_code=400, detail="Session Apple expirée")
+
+    try:
+        signing_key = _apple_jwks().get_signing_key_from_jwt(id_token)
+        claims = jwt.decode(
+            id_token, signing_key.key, algorithms=["RS256"],
+            audience=APPLE_CLIENT_ID, issuer=APPLE_ISSUER,
+            options={"require": ["exp", "iat", "iss", "aud", "sub", "nonce"]},
+        )
+    except Exception:
+        raise HTTPException(status_code=401, detail="Jeton d'identité Apple invalide")
+
+    if claims.get("nonce") != tx["nonce"]:
+        raise HTTPException(status_code=401, detail="nonce invalide")
+
+    name = ""
+    raw_user = form.get("user")
+    if raw_user:
+        try:
+            import json
+            nm = json.loads(raw_user).get("name", {})
+            name = f"{nm.get('firstName', '')} {nm.get('lastName', '')}".strip()
+        except Exception:
+            pass
+
+    uid = await ensure_social_user(
+        provider="apple", sub=claims["sub"], email=claims.get("email"),
+        name=name or None, picture=None,
+    )
+    token = secrets.token_urlsafe(32)
+    await db.user_sessions.insert_one({
+        "user_id": uid, "session_token": token,
+        "expires_at": now_utc() + timedelta(days=7), "created_at": now_utc(),
+    })
+    roles = [r["role"] async for r in db.user_roles.find({"user_id": uid})]
+    dest = "/admin" if ("ADMIN" in roles or "OPERATOR" in roles) else "/client"
+    return RedirectResponse(
+        url=f"{FRONTEND_URL}/auth/apple-return?token={token}&dest={dest}", status_code=303
+    )
 
 
 # ============ REFERENCE (lecture: authentifié ; écriture: ADMIN) ============
