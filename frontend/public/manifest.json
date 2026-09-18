@@ -1,0 +1,34 @@
+{
+  "name": "Baobab Cargo",
+  "short_name": "Baobab",
+  "description": "Service de transit de colis Europe → Bénin : adresse de réception, pesée au hub, expédition et suivi.",
+  "lang": "fr",
+  "dir": "ltr",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#071328",
+  "theme_color": "#0B2046",
+  "categories": ["business", "productivity", "shopping"],
+  "icons": [
+    {
+      "src": "/icons/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/icons/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/icons/icon-maskable-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    }
+  ]
+}

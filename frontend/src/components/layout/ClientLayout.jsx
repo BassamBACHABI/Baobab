@@ -1,0 +1,96 @@
+import { NavLink, Outlet, useLocation } from "react-router-dom";
+import { Home, Package, Truck, User } from "lucide-react";
+import { cn } from "@/lib/utils";
+import { Logo } from "@/components/brand/Logo";
+import { ThemeToggle } from "@/components/theme/ThemeToggle";
+import { Button } from "@/components/ui/button";
+
+const NAV = [
+  { label: "Accueil", icon: Home, to: "/client", end: true, id: "home" },
+  { label: "Mes colis", icon: Package, to: "/client/parcels", id: "parcels" },
+  { label: "Expéditions", icon: Truck, to: "/client/shipments", id: "shipments" },
+  { label: "Profil", icon: User, to: "/client/profile", id: "profile" },
+];
+
+export default function ClientLayout() {
+  const location = useLocation();
+
+  return (
+    <div className="min-h-screen bg-background">
+      {/* Desktop sidebar */}
+      <aside className="fixed inset-y-0 left-0 hidden w-64 flex-col border-r border-border bg-card p-4 md:flex">
+        <div className="px-2 py-3">
+          <Logo />
+        </div>
+        <nav className="mt-6 flex-1 space-y-1" data-testid="client-sidebar-nav">
+          {NAV.map((item) => (
+            <NavLink
+              key={item.id}
+              to={item.to}
+              end={item.end}
+              data-testid={`client-nav-${item.id}`}
+              className={({ isActive }) =>
+                cn(
+                  "flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium transition-colors",
+                  isActive
+                    ? "bg-accent/10 text-accent"
+                    : "text-muted-foreground hover:bg-secondary hover:text-foreground",
+                )
+              }
+            >
+              <item.icon className="h-5 w-5" />
+              {item.label}
+            </NavLink>
+          ))}
+        </nav>
+        <div className="mt-auto flex items-center justify-between rounded-xl border border-border p-2">
+          <span className="px-2 text-xs text-muted-foreground">Apparence</span>
+          <ThemeToggle />
+        </div>
+      </aside>
+
+      {/* Mobile top bar */}
+      <header className="sticky top-0 z-40 flex items-center justify-between border-b border-border bg-background/90 px-4 py-3 backdrop-blur-md md:hidden">
+        <Logo />
+        <ThemeToggle />
+      </header>
+
+      {/* Main content */}
+      <main className="md:pl-64">
+        <div className="mx-auto w-full max-w-5xl px-4 py-6 pb-28 sm:px-6 md:py-10 md:pb-10">
+          <Outlet />
+        </div>
+      </main>
+
+      {/* Mobile bottom nav */}
+      <nav
+        className="fixed inset-x-0 bottom-0 z-50 flex h-16 items-center justify-around border-t border-border bg-background/90 px-2 backdrop-blur-md md:hidden"
+        data-testid="client-bottom-nav"
+      >
+        {NAV.map((item) => {
+          const isActive = item.end
+            ? location.pathname === item.to
+            : location.pathname.startsWith(item.to);
+          return (
+            <NavLink
+              key={item.id}
+              to={item.to}
+              end={item.end}
+              data-testid={`client-bottom-nav-${item.id}`}
+              className={cn(
+                "flex flex-1 flex-col items-center gap-1 rounded-lg py-1.5 text-[11px] font-medium transition-colors",
+                isActive ? "text-accent" : "text-muted-foreground",
+              )}
+            >
+              <item.icon
+                className={cn("h-5 w-5", isActive && "scale-110")}
+                strokeWidth={isActive ? 2.4 : 2}
+              />
+              {item.label}
+            </NavLink>
+          );
+        })}
+      </nav>
+    </div>
+  );
+}

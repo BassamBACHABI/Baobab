@@ -1,0 +1,224 @@
+{
+  "project_info": {
+    "name": "Baobab Cargo",
+    "description": "Plateforme web logistique moderne, responsive et installable (PWA) pour le transit de fret Europe → Bénin. Multi-espace (Client Particulier & Back-office Admin) avec devises EUR / XOF.",
+    "language": "fr",
+    "currencies": ["EUR (€)", "XOF (FCFA)"],
+    "brand_colors": {
+      "primary_deep_blue": "#0B2046",
+      "accent_warm_terracotta": "#E56B3D",
+      "accent_hover": "#D45A2C",
+      "navy_light": "#1B3B70"
+    }
+  },
+  "typography": {
+    "primary_font": "Plus Jakarta Sans",
+    "fallback_fonts": ["sans-serif"],
+    "google_font_import": "https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap",
+    "hierarchy": {
+      "hero_title": {
+        "classes": "text-3xl sm:text-4xl lg:text-5xl font-extrabold tracking-tight leading-tight",
+        "mobile_size": "2rem (32px)",
+        "desktop_size": "3rem (48px)"
+      },
+      "section_title": {
+        "classes": "text-2xl sm:text-3xl lg:text-4xl font-bold tracking-tight text-foreground",
+        "size": "1.875rem (30px) - 2.25rem (36px)"
+      },
+      "card_title": {
+        "classes": "text-lg sm:text-xl font-semibold tracking-tight text-foreground",
+        "size": "1.125rem (18px) - 1.25rem (20px)"
+      },
+      "body_text": {
+        "classes": "text-sm sm:text-base leading-relaxed text-muted-foreground",
+        "size": "0.875rem (14px) - 1rem (16px)"
+      },
+      "caption_overline": {
+        "classes": "text-xs font-bold uppercase tracking-widest text-accent",
+        "size": "0.75rem (12px)"
+      }
+    }
+  },
+  "colors": {
+    "light": {
+      "background": "#F8FAFC",
+      "surface": "#FFFFFF",
+      "surface_subtle": "#F1F5F9",
+      "border": "#E2E8F0",
+      "border_hover": "#CBD5E1",
+      "text_primary": "#0B2046",
+      "text_secondary": "#475569",
+      "text_muted": "#64748B",
+      "primary": "#0B2046",
+      "primary_hover": "#163162",
+      "accent": "#E56B3D",
+      "accent_hover": "#D45A2C",
+      "status": {
+        "pending": {
+          "bg": "#FEF3C7",
+          "text": "#92400E",
+          "border": "#FDE68A"
+        },
+        "in_transit": {
+          "bg": "#E0F2FE",
+          "text": "#075985",
+          "border": "#BAE6FD"
+        },
+        "customs": {
+          "bg": "#EDE9FE",
+          "text": "#5B21B6",
+          "border": "#DDD6FE"
+        },
+        "delivered": {
+          "bg": "#DCFCE7",
+          "text": "#166534",
+          "border": "#BBF7D0"
+        },
+        "cancelled": {
+          "bg": "#FEE2E2",
+          "text": "#991B1B",
+          "border": "#FECACA"
+        }
+      }
+    },
+    "dark": {
+      "background": "#071328",
+      "surface": "#0B2046",
+      "surface_subtle": "#122A56",
+      "border": "#1E3A6E",
+      "border_hover": "#2B4C8C",
+      "text_primary": "#F8FAFC",
+      "text_secondary": "#CBD5E1",
+      "text_muted": "#94A3B8",
+      "primary": "#3B82F6",
+      "accent": "#E56B3D",
+      "accent_hover": "#F07B4F",
+      "status": {
+        "pending": {
+          "bg": "#451A03",
+          "text": "#FDE68A",
+          "border": "#78350F"
+        },
+        "in_transit": {
+          "bg": "#0C4A6E",
+          "text": "#BAE6FD",
+          "border": "#0369A1"
+        },
+        "customs": {
+          "bg": "#3B0764",
+          "text": "#DDD6FE",
+          "border": "#6D28D9"
+        },
+        "delivered": {
+          "bg": "#064E3B",
+          "text": "#BBF7D0",
+          "border": "#047857"
+        },
+        "cancelled": {
+          "bg": "#7F1D1D",
+          "text": "#FECACA",
+          "border": "#991B1B"
+        }
+      }
+    }
+  },
+  "spacing_and_radius": {
+    "border_radius": {
+      "card": "rounded-2xl (16px)",
+      "button": "rounded-xl (12px) or rounded-full for pills",
+      "badge": "rounded-lg (8px) or rounded-full",
+      "input": "rounded-xl (12px)",
+      "modal": "rounded-3xl (24px)"
+    },
+    "padding": {
+      "card_internal": "p-5 sm:p-7",
+      "section_spacing": "py-12 sm:py-20 lg:py-24",
+      "container_gap": "gap-4 sm:gap-6 lg:gap-8"
+    },
+    "shadows": {
+      "subtle": "shadow-[0_4px_20px_-2px_rgba(11,32,70,0.06)]",
+      "card": "shadow-[0_10px_30px_-5px_rgba(11,32,70,0.08)]",
+      "floating_nav": "shadow-[0_8px_30px_rgb(0,0,0,0.12)]",
+      "cta": "shadow-[0_10px_25px_-5px_rgba(229,107,61,0.4)]"
+    }
+  },
+  "navigation_architecture": {
+    "client_space": {
+      "mobile_bottom_bar": {
+        "description": "Barre de navigation fixe en bas d'écran (Mobile-First) avec icônes + libellés clairs, effet backdrop-blur",
+        "items": [
+          {"label": "Accueil", "icon": "Home", "route": "/client"},
+          {"label": "Mes Colis", "icon": "Package", "route": "/client/parcels"},
+          {"label": "Expéditions", "icon": "Truck", "route": "/client/shipments"},
+          {"label": "Profil", "icon": "User", "route": "/client/profile"}
+        ],
+        "styling": "fixed bottom-0 left-0 right-0 z-50 h-16 bg-background/90 backdrop-blur-md border-t border-border flex items-center justify-around px-2 md:hidden"
+      },
+      "desktop_sidebar": {
+        "description": "Barre latérale desktop élégante avec branding Baobab, statut d'utilisateur et accès rapide",
+        "styling": "hidden md:flex flex-col w-64 border-r border-border bg-card h-screen sticky top-0 p-4 shrink-0"
+      }
+    },
+    "admin_space": {
+      "desktop_sidebar": {
+        "description": "Sidebar professionnelle pour administrateurs avec sous-sections et indicateurs d'alertes",
+        "items": [
+          {"label": "Tableau de bord", "icon": "LayoutDashboard", "route": "/admin"},
+          {"label": "Clients", "icon": "Users", "route": "/admin/clients"},
+          {"label": "Colis", "icon": "PackageCheck", "route": "/admin/parcels"},
+          {"label": "Expéditions", "icon": "Ship", "route": "/admin/shipments"},
+          {"label": "Paramètres", "icon": "Settings", "route": "/admin/settings"}
+        ],
+        "styling": "hidden lg:flex flex-col w-64 border-r border-border bg-[#0B2046] text-white h-screen sticky top-0 p-4 shrink-0"
+      },
+      "mobile_drawer": {
+        "description": "Menu repliable (Sheet drawer) pour mobile avec déclencheur burger responsive",
+        "styling": "lg:hidden bg-[#0B2046] text-white"
+      }
+    }
+  },
+  "pwa_banner": {
+    "type": "Discreet top or bottom banner / modal prompt",
+    "text": "Installez l'application Baobab Cargo pour suivre vos colis en temps réel et recevoir des notifications.",
+    "cta_label": "Installer l'application",
+    "close_label": "Plus tard",
+    "styling": "bg-gradient-to-r from-[#0B2046] to-[#122A56] text-white p-4 rounded-2xl shadow-xl border border-white/10 flex flex-col sm:flex-row items-center justify-between gap-3"
+  },
+  "pedagogical_empty_states": {
+    "parcels_empty": {
+      "title": "Aucun colis enregistre pour le moment",
+      "description": "Lorsque vous expédiez des paquets depuis la France ou l'Europe vers Cotonou, ils apparaîtront ici avec leur statut de transit en direct.",
+      "cta_label": "Comment envoyer un colis ?",
+      "icon": "PackageOpen"
+    },
+    "shipments_empty": {
+      "title": "Aucune expédition en cours",
+      "description": "Les groupages maritimes et aériens hebdomadaires seront listés ici dès le départ de notre entrepôt européen.",
+      "cta_label": "Voir le calendrier des départs",
+      "icon": "Ship"
+    },
+    "admin_clients_empty": {
+      "title": "Aucun client enregistré",
+      "description": "Les nouveaux inscrits au service de transit s'afficheront ici avec leurs coordonnées et leur historique.",
+      "icon": "UserPlus"
+    }
+  },
+  "loading_and_error_states": {
+    "skeletons": "Utiliser des éléments <Skeleton className='h-12 w-full rounded-xl animate-pulse bg-muted' /> pour chaque widget et tableau pendant le chargement.",
+    "error_messages": "Les erreurs doivent présenter une illustration/icône d'alerte bienveillante, un titre compréhensible en français et un bouton 'Réessayer' à fort contraste (data-testid='error-retry-btn')."
+  },
+  "image_urls": {
+    "hero_banner": "https://images.pexels.com/photos/262353/pexels-photo-262353.jpeg?auto=compress&cs=tinysrgb&dpr=2&h=650&w=940",
+    "globe_route": "https://images.unsplash.com/photo-1775117593404-9423d6f04ee2?crop=entropy&cs=srgb&fm=jpg&ixid=M3w4NjA2ODl8MHwxfHNlYXJjaHwxfHxcYXJnbyUyMHNoaXBwaW5nJTIwbG9naXN0aWNzJTIwY29udGFpbmVyJTIwZXVyb3BlJTIwYWZyaWNhfGVufDB8fHx8MTc4OTc2MTk0NXww&ixlib=rb-4.1.0&q=85",
+    "port_logistics": "https://images.pexels.com/photos/22730367/pexels-photo-22730367.jpeg?auto=compress&cs=tinysrgb&dpr=2&h=650&w=940",
+    "warehouse_worker": "https://images.unsplash.com/photo-1779517225996-d5b751f80f48?crop=entropy&cs=srgb&fm=jpg&ixid=M3w3NDQ2NDN8MHwxfHNlYXJjaHwxfHxmcmVpZ2h0JTIwd2FyZWhvdXNlJTIwd29ya2VyJTIwZGVsaXZlcnklMjBhaXJwbGFuZXxlbnwwfHx8fDE3ODk3NjE5NDV8MA&ixlib=rb-4.1.0&q=85",
+    "delivery_person": "https://images.pexels.com/photos/6169046/pexels-photo-6169046.jpeg?auto=compress&cs=tinysrgb&dpr=2&h=650&w=940"
+  },
+  "UNIVERSAL GUIDELINES FOR MAIN AGENT": {
+    "language": "French (fr)",
+    "testing_requirement": "EVERY interactive and key informational element MUST include a descriptive data-testid attribute in kebab-case (e.g. data-testid='client-bottom-nav-parcels', data-testid='install-pwa-btn', data-testid='theme-toggle-btn').",
+    "react_file_extension": "This project uses .js and .jsx files. Do not use TypeScript .tsx extensions when creating or editing code files.",
+    "no_transparent_overlays": "Never use fully transparent header backgrounds or dropdown overlays. Always include backdrop-blur or solid bg-surface.",
+    "spacing_philosophy": "Use generous padding and rounded corners (rounded-2xl) to project a modern, reassuring logistics experience."
+  }
+}
