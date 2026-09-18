@@ -1,6 +1,7 @@
-import { NavLink, Outlet, useLocation } from "react-router-dom";
-import { Home, Package, Truck, User } from "lucide-react";
+import { NavLink, Outlet, useLocation, useNavigate } from "react-router-dom";
+import { Home, Package, Truck, User, LogOut } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { useAuth } from "@/context/AuthContext";
 import { Logo } from "@/components/brand/Logo";
 import { ThemeToggle } from "@/components/theme/ThemeToggle";
 import { Button } from "@/components/ui/button";
@@ -14,6 +15,13 @@ const NAV = [
 
 export default function ClientLayout() {
   const location = useLocation();
+  const navigate = useNavigate();
+  const { user, logout } = useAuth();
+
+  const doLogout = async () => {
+    await logout();
+    navigate("/login", { replace: true });
+  };
 
   return (
     <div className="min-h-screen bg-background">
@@ -43,16 +51,31 @@ export default function ClientLayout() {
             </NavLink>
           ))}
         </nav>
-        <div className="mt-auto flex items-center justify-between rounded-xl border border-border p-2">
-          <span className="px-2 text-xs text-muted-foreground">Apparence</span>
-          <ThemeToggle />
+        <div className="mt-auto space-y-2">
+          <div className="flex items-center justify-between rounded-xl border border-border p-2">
+            <span className="px-2 text-xs text-muted-foreground">Apparence</span>
+            <ThemeToggle />
+          </div>
+          <button
+            onClick={doLogout}
+            data-testid="client-logout-btn"
+            className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground"
+          >
+            <LogOut className="h-5 w-5" />
+            <span className="truncate">Déconnexion{user?.name ? ` · ${user.name}` : ""}</span>
+          </button>
         </div>
       </aside>
 
       {/* Mobile top bar */}
       <header className="sticky top-0 z-40 flex items-center justify-between border-b border-border bg-background/90 px-4 py-3 backdrop-blur-md md:hidden">
         <Logo />
-        <ThemeToggle />
+        <div className="flex items-center gap-1">
+          <ThemeToggle />
+          <Button variant="ghost" size="icon" onClick={doLogout} aria-label="Déconnexion" data-testid="client-logout-btn-mobile">
+            <LogOut className="h-5 w-5" />
+          </Button>
+        </div>
       </header>
 
       {/* Main content */}

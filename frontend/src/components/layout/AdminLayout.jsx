@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { NavLink, Outlet } from "react-router-dom";
+import { NavLink, Outlet, useNavigate } from "react-router-dom";
 import {
   LayoutDashboard,
   Users,
@@ -8,8 +8,10 @@ import {
   Settings,
   Menu,
   ArrowLeft,
+  LogOut,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { useAuth } from "@/context/AuthContext";
 import { Logo } from "@/components/brand/Logo";
 import { ThemeToggle } from "@/components/theme/ThemeToggle";
 import { Button } from "@/components/ui/button";
@@ -52,6 +54,13 @@ function NavItems({ onNavigate }) {
 
 export default function AdminLayout() {
   const [open, setOpen] = useState(false);
+  const navigate = useNavigate();
+  const { user, logout } = useAuth();
+
+  const doLogout = async () => {
+    await logout();
+    navigate("/login", { replace: true });
+  };
 
   return (
     <div className="min-h-screen bg-background">
@@ -78,6 +87,13 @@ export default function AdminLayout() {
           >
             <ArrowLeft className="h-4 w-4" /> Retour à l'espace client
           </NavLink>
+          <button
+            onClick={doLogout}
+            data-testid="admin-logout-btn"
+            className="flex w-full items-center gap-2 rounded-xl px-3 py-2 text-xs text-white/60 transition-colors hover:bg-white/10 hover:text-white"
+          >
+            <LogOut className="h-4 w-4" /> Déconnexion{user?.name ? ` · ${user.name}` : ""}
+          </button>
         </div>
       </aside>
 

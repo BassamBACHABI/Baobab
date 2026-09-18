@@ -44,14 +44,14 @@ export default function Landing() {
               className="hidden rounded-xl sm:inline-flex"
               data-testid="landing-admin-link"
             >
-              <Link to="/admin">Back-office</Link>
+              <Link to="/login">Back-office</Link>
             </Button>
             <Button
               asChild
               className="rounded-xl bg-accent text-white hover:bg-[#D45A2C]"
               data-testid="landing-client-cta"
             >
-              <Link to="/client">Espace client</Link>
+              <Link to="/login">Espace client</Link>
             </Button>
           </div>
         </div>
@@ -82,7 +82,7 @@ export default function Landing() {
                   className="h-12 rounded-xl bg-accent px-7 text-base text-white shadow-cta hover:bg-[#D45A2C]"
                   data-testid="hero-client-cta"
                 >
-                  <Link to="/client">
+                  <Link to="/login">
                     Commencer <ArrowRight className="ml-1.5 h-5 w-5" />
                   </Link>
                 </Button>
@@ -93,7 +93,7 @@ export default function Landing() {
                   className="h-12 rounded-xl px-7 text-base"
                   data-testid="hero-admin-cta"
                 >
-                  <Link to="/admin">
+                  <Link to="/login">
                     <LayoutDashboard className="mr-1.5 h-5 w-5" /> Back-office
                   </Link>
                 </Button>
@@ -171,7 +171,7 @@ export default function Landing() {
                 className="h-12 rounded-xl bg-accent px-8 text-base text-white shadow-cta hover:bg-[#D45A2C]"
                 data-testid="cta-band-client"
               >
-                <Link to="/client">
+                <Link to="/login">
                   <Package className="mr-1.5 h-5 w-5" /> Accéder à mon espace
                 </Link>
               </Button>
