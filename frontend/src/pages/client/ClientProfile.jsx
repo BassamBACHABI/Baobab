@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { User, Mail, Phone, MapPin, LogOut, Copy, Check, Plus, Home } from "lucide-react";
+import { User, Mail, Phone, MapPin, LogOut, Copy, Check, Plus, Home, Bell } from "lucide-react";
 import { toast } from "sonner";
 import { api, apiError } from "@/lib/api";
 import { useAuth } from "@/context/AuthContext";
@@ -9,6 +9,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Switch } from "@/components/ui/switch";
 import { Skeleton } from "@/components/ui/skeleton";
 
 export default function ClientProfile() {
@@ -23,22 +24,36 @@ export default function ClientProfile() {
   const [form, setForm] = useState({ first_name: "", last_name: "", phone: "" });
   const [addr, setAddr] = useState({ city: "", address_line: "", landmark: "" });
   const [addingAddr, setAddingAddr] = useState(false);
+  const [notifyNonEssential, setNotifyNonEssential] = useState(true);
 
   const load = async () => {
     try {
-      const [p, f, a] = await Promise.all([
+      const [p, f, a, pref] = await Promise.all([
         api.get("/me/profile"),
         api.get("/me/forwarding-address"),
         api.get("/me/addresses"),
+        api.get("/me/notification-preferences"),
       ]);
       setProfile(p.data);
       setForm({ first_name: p.data.first_name || "", last_name: p.data.last_name || "", phone: p.data.phone || "" });
       setForwarding(f.data?.[0] || null);
       setAddresses(a.data || []);
+      setNotifyNonEssential(pref.data?.notify_non_essential ?? true);
     } catch {
       toast.error("Impossible de charger votre profil.");
     } finally {
       setLoading(false);
+    }
+  };
+
+  const toggleNotify = async (value) => {
+    setNotifyNonEssential(value);
+    try {
+      await api.put("/me/notification-preferences", { notify_non_essential: value });
+      toast.success("Préférences enregistrées");
+    } catch (err) {
+      setNotifyNonEssential(!value);
+      toast.error(apiError(err.response?.data?.detail) || err.message);
     }
   };
 
@@ -217,6 +232,30 @@ export default function ClientProfile() {
               <Plus className="mr-1.5 h-4 w-4" /> Ajouter l'adresse
             </Button>
           </form>
+        </CardContent>
+      </Card>
+
+      {/* Préférences de notification */}
+      <Card className="rounded-2xl border-border shadow-card" data-testid="notification-prefs-card">
+        <CardContent className="p-6">
+          <h3 className="mb-1 flex items-center gap-2 text-base font-semibold text-foreground">
+            <Bell className="h-4 w-4 text-accent" /> Notifications par e-mail
+          </h3>
+          <p className="mb-4 text-sm text-muted-foreground">
+            Les e-mails essentiels (paiement confirmé, expédition en route) sont toujours envoyés.
+          </p>
+          <div className="flex items-center justify-between rounded-xl border border-border p-4">
+            <div className="pr-4">
+              <p className="text-sm font-medium text-foreground">E-mails d'information</p>
+              <p className="text-xs text-muted-foreground">Colis reçu, devis disponible, arrivée au Bénin, livraison.</p>
+            </div>
+            <Switch
+              checked={notifyNonEssential}
+              onCheckedChange={toggleNotify}
+              data-testid="notify-non-essential-switch"
+              aria-label="Activer les e-mails non essentiels"
+            />
+          </div>
         </CardContent>
       </Card>
     </div>

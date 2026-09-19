@@ -219,3 +219,7 @@ class WebhookIn(BaseModel):
 
 class SimulateIn(BaseModel):
     result: str  # success | failure
+
+
+class PrefIn(BaseModel):
+    notify_non_essential: bool

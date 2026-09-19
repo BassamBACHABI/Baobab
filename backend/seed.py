@@ -31,6 +31,10 @@ async def create_indexes():
     await db.customer_addresses.create_index("user_id")
     await db.package_photos.create_index("package_id")
     await db.package_items.create_index("package_id")
+    await db.notifications.create_index(
+        [("event", 1), ("entity_type", 1), ("entity_id", 1)], unique=True
+    )
+    await db.cost_records.create_index("shipment_id")
 
 
 DEFAULT_SETTINGS = {

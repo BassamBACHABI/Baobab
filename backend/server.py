@@ -21,7 +21,7 @@ from models import (
     CountryIn, HubIn, CarrierIn, ZoneIn, TariffIn, SettingIn,
     PackageIn, WeighIn, PackageItemIn, TransitionIn, ShipmentIn, TrackingIn,
     PaymentIn, CostIn, ForgotIn, ResetIn, DeclareIn, ReceiveIn, AttachIn,
-    QuoteIn, ShipmentUpdateIn, WebhookIn, SimulateIn,
+    QuoteIn, ShipmentUpdateIn, WebhookIn, SimulateIn, PrefIn,
 )
 from security import (
     verify_password, hash_password, create_access_token, get_current_user, require_roles,
@@ -33,6 +33,7 @@ from statemachine import (
     PACKAGE_TRANSITIONS, SHIPMENT_TRANSITIONS, PAYMENT_TRANSITIONS,
 )
 from payments_provider import provider as pay_provider
+from emailer import notify_event
 from seed import run_seed
 
 
@@ -82,6 +83,16 @@ async def owns_or_staff(user, user_id_field_value):
     if is_staff(user):
         return True
     return user_id_field_value == user["id"]
+
+
+async def _client_contact(user_id):
+    if not user_id:
+        return None
+    prof = await db.profiles.find_one({"_id": oid(user_id)})
+    if not prof or not prof.get("email"):
+        return None
+    name = f"{prof.get('first_name', '')} {prof.get('last_name', '')}".strip() or "client"
+    return {"email": prof["email"], "name": name}
 
 
 # ============ AUTH ============
@@ -329,6 +340,7 @@ async def create_hub(body: HubIn, user=Depends(require_roles("ADMIN"))):
     doc = body.model_dump()
     doc["created_at"] = now_utc()
     res = await db.logistic_hubs.insert_one(doc)
+    await write_audit(user["id"], "HUB_CREATE", "HUB", res.inserted_id, None, doc)
     return serialize(await db.logistic_hubs.find_one({"_id": res.inserted_id}))
 
 
@@ -342,6 +354,7 @@ async def create_carrier(body: CarrierIn, user=Depends(require_roles("ADMIN"))):
     doc = body.model_dump()
     doc["created_at"] = now_utc()
     res = await db.carriers.insert_one(doc)
+    await write_audit(user["id"], "CARRIER_CREATE", "CARRIER", res.inserted_id, None, doc)
     return serialize(await db.carriers.find_one({"_id": res.inserted_id}))
 
 
@@ -356,6 +369,7 @@ async def create_zone(body: ZoneIn, user=Depends(require_roles("ADMIN"))):
     doc["fee_xof"] = to_money(doc["fee_xof"])
     doc["created_at"] = now_utc()
     res = await db.delivery_zones.insert_one(doc)
+    await write_audit(user["id"], "ZONE_CREATE", "ZONE", res.inserted_id, None, doc)
     return serialize(await db.delivery_zones.find_one({"_id": res.inserted_id}))
 
 
@@ -407,6 +421,21 @@ async def update_my_profile(body: ProfileUpdate, user=Depends(get_current_user))
     if changes:
         await db.profiles.update_one({"_id": oid(user["id"])}, {"$set": changes})
     return serialize(await db.profiles.find_one({"_id": oid(user["id"])}))
+
+
+@api.get("/me/notification-preferences")
+async def get_notification_prefs(user=Depends(get_current_user)):
+    prof = await db.profiles.find_one({"_id": oid(user["id"])})
+    return {"notify_non_essential": (prof or {}).get("notify_non_essential", True)}
+
+
+@api.put("/me/notification-preferences")
+async def set_notification_prefs(body: PrefIn, user=Depends(get_current_user)):
+    await db.profiles.update_one(
+        {"_id": oid(user["id"])},
+        {"$set": {"notify_non_essential": body.notify_non_essential, "updated_at": now_utc()}},
+    )
+    return {"notify_non_essential": body.notify_non_essential}
 
 
 @api.get("/me/forwarding-address")
@@ -595,6 +624,13 @@ async def create_shipment(body: QuoteIn, user=Depends(get_current_user)):
     await db.status_history.insert_one({"entity_type": "SHIPMENT", "entity_id": sid, "from_status": None, "to_status": "DRAFT", "actor_id": user["id"], "reason": "Création", "created_at": now_utc()})
     await write_audit(user["id"], "SHIPMENT_CREATE", "SHIPMENT", sid, None, snap)
     await transition_status("SHIPMENT", sid, "AWAITING_PAYMENT", user["id"], "Devis validé")
+    contact = await _client_contact(user["id"])
+    if contact:
+        await notify_event(
+            "quote_ready", "SHIPMENT", sid, to_email=contact["email"], user_id=user["id"],
+            ctx={"name": contact["name"], "reference": ref, "sid": sid,
+                 "total_eur": snap.get("total_eur"), "total_xof": snap.get("total_xof")},
+        )
     return serialize(await db.shipments.find_one({"_id": res.inserted_id}))
 
 
@@ -631,6 +667,15 @@ async def _process_payment(payment_id, result, actor):
             s = await db.shipments.find_one({"_id": oid(sid)})
             if s and s.get("status") == "AWAITING_PAYMENT":
                 await transition_status("SHIPMENT", sid, "PAID", actor, "Paiement confirmé")
+            if s:
+                contact = await _client_contact(s.get("user_id"))
+                if contact:
+                    await notify_event(
+                        "payment_confirmed", "PAYMENT", payment_id, to_email=contact["email"],
+                        user_id=s.get("user_id"),
+                        ctx={"name": contact["name"], "reference": s.get("reference"), "sid": sid,
+                             "amount": str(to_decimal(p.get("amount")) or ""), "currency": p.get("currency", "XOF")},
+                    )
         return {"status": "PAID"}
     await transition_status("PAYMENT", payment_id, "FAILED", actor, "Échec du paiement")
     return {"status": "FAILED"}
@@ -880,6 +925,23 @@ async def admin_receive(body: ReceiveIn, user=Depends(require_roles("ADMIN", "OP
     if pkg.get("user_id") and body.auto_store and pkg.get("status") == "RECEIVED":
         await transition_status("PACKAGE", pid, "INSPECTED", user["id"], "Inspection")
         await transition_status("PACKAGE", pid, "STORED", user["id"], "Mise en stock")
+    pkg = await db.packages.find_one({"_id": oid(pid)})
+    if pkg.get("user_id"):
+        contact = await _client_contact(pkg["user_id"])
+        if contact:
+            await notify_event(
+                "package_received", "PACKAGE", pid, to_email=contact["email"], user_id=pkg["user_id"],
+                ctx={"name": contact["name"], "reference": pkg.get("reference"),
+                     "weight": str(to_decimal(pkg.get("billable_weight_kg")) or "—"),
+                     "status_label": STATUS_LABELS["PACKAGE"].get(pkg.get("status"), pkg.get("status"))},
+            )
+    elif pkg.get("status") == "UNIDENTIFIED":
+        admin_email = os.environ.get("ADMIN_EMAIL")
+        if admin_email:
+            await notify_event(
+                "package_unidentified", "PACKAGE", pid, to_email=admin_email,
+                ctx={"reference": pkg.get("reference")},
+            )
     return serialize(await db.packages.find_one({"_id": oid(pid)}))
 
 
@@ -1019,6 +1081,14 @@ async def admin_ship_transition(sid: str, body: TransitionIn, user=Depends(requi
     elif body.to_status == "DELIVERED":
         for pid in links:
             await _try_pkg(pid, "DELIVERED", user["id"])
+    contact = await _client_contact(ship.get("user_id"))
+    if contact and body.to_status in ("SHIPPED", "ARRIVED_BENIN", "DELIVERED"):
+        ev = {"SHIPPED": "shipment_created", "ARRIVED_BENIN": "arrived_benin", "DELIVERED": "delivered"}[body.to_status]
+        await notify_event(
+            ev, "SHIPMENT", f"{sid}:{body.to_status}", to_email=contact["email"], user_id=ship.get("user_id"),
+            ctx={"name": contact["name"], "reference": ship.get("reference"), "sid": sid,
+                 "tracking_number": ship.get("tracking_number") or "—"},
+        )
     return serialize(await db.shipments.find_one({"_id": oid(sid)}))
 
 
@@ -1062,6 +1132,129 @@ async def admin_add_cost(body: CostIn, user=Depends(require_roles("ADMIN"))):
     res = await db.cost_records.insert_one(doc)
     await write_audit(user["id"], "COST_CREATE", "COST", res.inserted_id, None, doc)
     return serialize(await db.cost_records.find_one({"_id": res.inserted_id}))
+
+
+# ============ ADMIN : tableau de bord & marge ============
+from datetime import datetime
+
+
+def _week_start():
+    n = now_utc()
+    return (n - timedelta(days=n.weekday())).replace(hour=0, minute=0, second=0, microsecond=0)
+
+
+def _month_start():
+    return now_utc().replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+
+
+def _parse_dt(v, default):
+    if not v:
+        return default
+    try:
+        return datetime.fromisoformat(v).replace(tzinfo=timezone.utc)
+    except Exception:
+        return default
+
+
+@api.get("/admin/dashboard/metrics")
+async def admin_dashboard_metrics(user=Depends(require_roles("ADMIN", "OPERATOR"))):
+    """Indicateurs opérationnels (visibles ADMIN + OPERATOR, aucun montant)."""
+    ws = _week_start()
+    received_week = await db.packages.count_documents({"received_at": {"$gte": ws}})
+    to_identify = await db.packages.count_documents({"status": "UNIDENTIFIED"})
+    in_stock = await db.packages.count_documents({"status": "STORED"})
+    shipments_by_status = {}
+    for s in await db.shipments.find({}, {"status": 1}).to_list(2000):
+        st = s.get("status", "DRAFT")
+        shipments_by_status[st] = shipments_by_status.get(st, 0) + 1
+    return {
+        "received_this_week": received_week,
+        "to_identify": to_identify,
+        "in_stock": in_stock,
+        "shipments_by_status": shipments_by_status,
+    }
+
+
+@api.get("/admin/dashboard/todo")
+async def admin_dashboard_todo(user=Depends(require_roles("ADMIN", "OPERATOR"))):
+    """À traiter aujourd'hui (ADMIN + OPERATOR)."""
+    unidentified = serialize(await db.packages.find({"status": "UNIDENTIFIED"}).sort("created_at", -1).to_list(50))
+    awaiting_prep = serialize(await db.shipments.find({"status": "PAID"}).sort("created_at", -1).to_list(50))
+    incidents = serialize(await db.shipments.find({"status": "INCIDENT"}).sort("created_at", -1).to_list(50))
+    return {"unidentified": unidentified, "awaiting_preparation": awaiting_prep, "incidents": incidents}
+
+
+@api.get("/admin/dashboard/finance")
+async def admin_dashboard_finance(user=Depends(require_roles("ADMIN"))):
+    """Paiements & chiffre d'affaires (ADMIN uniquement ; OPERATOR interdit → 403)."""
+    ms = _month_start()
+    rate = to_decimal(await get_setting("eur_xof_rate", 655.957))
+    paid = await db.payments.find({"status": "PAID"}).to_list(5000)
+    payments_received = len(paid)
+    revenue_month_xof = Decimal("0")
+    for p in paid:
+        pa = p.get("paid_at") or p.get("created_at")
+        if isinstance(pa, datetime):
+            if pa.tzinfo is None:
+                pa = pa.replace(tzinfo=timezone.utc)
+            if pa >= ms:
+                revenue_month_xof += to_decimal(p.get("amount")) or Decimal("0")
+    revenue_month_eur = revenue_month_xof / rate if rate else Decimal("0")
+    return {
+        "payments_received": payments_received,
+        "revenue_month_xof": _q2(revenue_month_xof),
+        "revenue_month_eur": _q2(revenue_month_eur),
+        "eur_xof_rate": str(rate),
+    }
+
+
+@api.get("/admin/dashboard/margin")
+async def admin_dashboard_margin(
+    date_from: str = Query(None), date_to: str = Query(None),
+    user=Depends(require_roles("ADMIN")),
+):
+    """Marge brute par expédition = revenus (payé) − coûts réels (ADMIN uniquement)."""
+    start = _parse_dt(date_from, _month_start())
+    end = _parse_dt(date_to, now_utc())
+    if end.hour == 0 and end.minute == 0:
+        end = end.replace(hour=23, minute=59, second=59)
+    rate = to_decimal(await get_setting("eur_xof_rate", 655.957))
+    shipments = await db.shipments.find({"created_at": {"$gte": start, "$lte": end}}).to_list(5000)
+    rows = []
+    tot_rev = tot_cost = tot_margin = tot_weight = Decimal("0")
+    for s in shipments:
+        sid = str(s["_id"])
+        snap = s.get("tariff_snapshot") or {}
+        srate = to_decimal(snap.get("eur_xof_rate")) or rate
+        rev_eur = Decimal("0")
+        for p in await db.payments.find({"shipment_id": sid, "status": "PAID"}).to_list(50):
+            amt = to_decimal(p.get("amount")) or Decimal("0")
+            rev_eur += amt / srate if (p.get("currency") == "XOF" and srate) else amt
+        cost_eur = Decimal("0")
+        for c in await db.cost_records.find({"shipment_id": sid}).to_list(100):
+            amt = to_decimal(c.get("amount")) or Decimal("0")
+            cost_eur += amt / rate if (c.get("currency") == "XOF" and rate) else amt
+        weight = to_decimal(s.get("total_billable_weight_kg")) or Decimal("0")
+        margin = rev_eur - cost_eur
+        tot_rev += rev_eur
+        tot_cost += cost_eur
+        tot_margin += margin
+        tot_weight += weight
+        rows.append({
+            "shipment_id": sid, "reference": s.get("reference"), "status": s.get("status"),
+            "revenue_eur": _q2(rev_eur), "cost_eur": _q2(cost_eur), "margin_eur": _q2(margin),
+            "billable_weight_kg": _q2(weight),
+        })
+    n = len(shipments)
+    avg_margin = tot_margin / n if n else Decimal("0")
+    cost_per_kg = tot_cost / tot_weight if tot_weight else Decimal("0")
+    return {
+        "date_from": start.isoformat(), "date_to": end.isoformat(), "count": n,
+        "total_revenue_eur": _q2(tot_rev), "total_cost_eur": _q2(tot_cost),
+        "total_margin_eur": _q2(tot_margin), "total_margin_xof": _q2(tot_margin * rate),
+        "average_margin_eur": _q2(avg_margin), "cost_per_kg_eur": _q2(cost_per_kg),
+        "rows": rows,
+    }
 
 
 app.include_router(api)
