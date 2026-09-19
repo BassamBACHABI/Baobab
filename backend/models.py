@@ -223,3 +223,11 @@ class SimulateIn(BaseModel):
 
 class PrefIn(BaseModel):
     notify_non_essential: bool
+
+
+class PushSubscribeIn(BaseModel):
+    subscription: dict
+
+
+class PushUnsubscribeIn(BaseModel):
+    endpoint: str

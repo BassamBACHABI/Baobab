@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { User, Mail, Phone, MapPin, LogOut, Copy, Check, Plus, Home, Bell } from "lucide-react";
+import { User, Mail, Phone, MapPin, LogOut, Copy, Check, Plus, Home, Bell, BellRing } from "lucide-react";
 import { toast } from "sonner";
 import { api, apiError } from "@/lib/api";
 import { useAuth } from "@/context/AuthContext";
@@ -11,6 +11,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { Skeleton } from "@/components/ui/skeleton";
+import { pushSupported, getPushSubscription, enablePush, disablePush } from "@/lib/push";
 
 export default function ClientProfile() {
   const { logout } = useAuth();
@@ -25,6 +26,46 @@ export default function ClientProfile() {
   const [addr, setAddr] = useState({ city: "", address_line: "", landmark: "" });
   const [addingAddr, setAddingAddr] = useState(false);
   const [notifyNonEssential, setNotifyNonEssential] = useState(true);
+  const [pushOn, setPushOn] = useState(false);
+  const [pushBusy, setPushBusy] = useState(false);
+  const [pushReady, setPushReady] = useState(false); // service worker actif (PWA installée / prod)
+
+  useEffect(() => {
+    (async () => {
+      if (!pushSupported()) return;
+      try {
+        const reg = await navigator.serviceWorker.getRegistration();
+        setPushReady(!!reg);
+        const sub = await getPushSubscription();
+        setPushOn(!!sub);
+      } catch (e) { /* ignore */ }
+    })();
+  }, []);
+
+  const togglePush = async (value) => {
+    setPushBusy(true);
+    try {
+      if (value) {
+        await enablePush();
+        setPushOn(true);
+        toast.success("Notifications push activées");
+      } else {
+        await disablePush();
+        setPushOn(false);
+        toast.success("Notifications push désactivées");
+      }
+    } catch (err) {
+      const map = {
+        unsupported: "Votre navigateur ne prend pas en charge les notifications.",
+        "no-sw": "Installez l'application (Ajouter à l'écran d'accueil) pour activer le push.",
+        denied: "Autorisation refusée. Activez les notifications dans les réglages du navigateur.",
+      };
+      toast.error(map[err.message] || "Impossible d'activer les notifications push.");
+      setPushOn(false);
+    } finally {
+      setPushBusy(false);
+    }
+  };
 
   const load = async () => {
     try {
@@ -254,6 +295,25 @@ export default function ClientProfile() {
               onCheckedChange={toggleNotify}
               data-testid="notify-non-essential-switch"
               aria-label="Activer les e-mails non essentiels"
+            />
+          </div>
+
+          <div className="mt-3 flex items-center justify-between rounded-xl border border-border p-4">
+            <div className="pr-4">
+              <p className="flex items-center gap-1.5 text-sm font-medium text-foreground">
+                <BellRing className="h-4 w-4 text-accent" /> Notifications push
+              </p>
+              <p className="text-xs text-muted-foreground">
+                Alertes en temps réel sur cet appareil, même l'application fermée.
+                {!pushReady && " Disponible une fois l'application installée sur l'écran d'accueil."}
+              </p>
+            </div>
+            <Switch
+              checked={pushOn}
+              disabled={pushBusy || !pushSupported()}
+              onCheckedChange={togglePush}
+              data-testid="push-switch"
+              aria-label="Activer les notifications push"
             />
           </div>
         </CardContent>

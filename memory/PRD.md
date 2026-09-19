@@ -70,7 +70,16 @@ Marque retenue : **Baobab Cargo** (nom court « Baobab »).
 - **Prompt 9 — Notifications e-mail** : Resend géré par Emergent (`emailer.py`, garde-fou `_assert_safe_email`), marque **Baobab Cargo**, modèles FR. Événements : colis reçu, colis à identifier (admin), devis dispo, paiement confirmé, expédition expédiée (n° suivi), arrivée Bénin, livraison. Table `notifications` **idempotente** (index unique event+entity). Préférences client (`/me/notification-preferences`) : e-mails non essentiels activables (essentiels toujours envoyés). Clés en secrets uniquement.
 - **Prompt 10 — Audit sécurité/qualité** : rapport complet dans `/app/memory/SECURITY_AUDIT.md` (isolation par table, 10 scénarios d'attaque tous en échec via curl, transitions 100 % serveur+historisées, aucun secret côté client, décimaux exacts + idempotence + snapshot figé, PWA, responsive/thèmes). **Correctif** : statuts désormais affichés en **français** (StatusBadge remappé sur les vrais codes EN→libellés FR + couleurs).
 
+## Fait — Suivi Push (2026-06 — Notifications Web Push PWA)
+- **Web Push standard (VAPID)** : clés générées et stockées dans `backend/.env` (`VAPID_PUBLIC_KEY`/`VAPID_PRIVATE_KEY`/`VAPID_SUBJECT`), lib `pywebpush`. Module `push.py` (`push_to_user`, envoi non bloquant via `asyncio.to_thread`, purge des abonnements sur 404/410).
+- Endpoints : `GET /push/vapid-public-key`, `POST /me/push/subscribe`, `POST /me/push/unsubscribe` (auth client). Collection `push_subscriptions` (index unique `endpoint`).
+- Push envoyé **en parallèle des e-mails** aux mêmes étapes (colis reçu, devis prêt, paiement confirmé, expédié, arrivé au Bénin, livré). Messages FR.
+- Service worker : handlers `push` (showNotification) + `notificationclick` (focus/openWindow). Cache bumpé v2.
+- Frontend : util `lib/push.js` + bascule « Notifications push » dans le profil client (opt-in par appareil). Détection de support + SW actif ; message d'aide si l'app n'est pas installée. ⚠️ Le SW n'est enregistré qu'en **production/PWA installée** (protège le hot reload) → le push fonctionne sur l'app déployée, et sur iPhone uniquement une fois « Ajouté à l'écran d'accueil » (iOS 16.4+). Backend testé (curl + envoi simulé) ; livraison E2E à valider sur appareil réel après déploiement.
+
 ## Backlog priorisé (prochains prompts, ne pas anticiper)
+- **P1** : Paiement réel Mobile Money **KkiaPay** (MTN/Moov + carte, sandbox puis prod) — remplacer `SimulationProvider`.
+- **P1** : Relance automatique de devis impayé après 48 h (tâche planifiée quotidienne).
 
 ## Prochaines actions
 - Attendre le Prompt 2 de l'utilisateur (probablement Auth + rôles + adresse de réception).

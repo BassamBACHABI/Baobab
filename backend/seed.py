@@ -34,6 +34,8 @@ async def create_indexes():
     await db.notifications.create_index(
         [("event", 1), ("entity_type", 1), ("entity_id", 1)], unique=True
     )
+    await db.push_subscriptions.create_index("endpoint", unique=True)
+    await db.push_subscriptions.create_index("user_id")
     await db.cost_records.create_index("shipment_id")
 
 

@@ -2,7 +2,7 @@
    Met en cache les ressources statiques et fournit une page hors-ligne.
    Ne met JAMAIS en cache les données privées des clients (/api). */
 
-const CACHE = "baobab-static-v1";
+const CACHE = "baobab-static-v2";
 const OFFLINE_URL = "/offline.html";
 const PRECACHE = ["/", OFFLINE_URL, "/manifest.json"];
 
@@ -64,4 +64,38 @@ self.addEventListener("fetch", (event) => {
             ),
         );
     }
+});
+
+// ---- Web Push : afficher une notification (Apple exige showNotification) ----
+self.addEventListener("push", (event) => {
+    let data = {};
+    try {
+        data = event.data ? event.data.json() : {};
+    } catch (e) {
+        data = { title: "Baobab Cargo", body: event.data ? event.data.text() : "" };
+    }
+    const title = data.title || "Baobab Cargo";
+    const options = {
+        body: data.body || "",
+        icon: "/icons/icon-192.png",
+        badge: "/icons/icon-192.png",
+        data: { url: data.url || "/client" },
+    };
+    event.waitUntil(self.registration.showNotification(title, options));
+});
+
+self.addEventListener("notificationclick", (event) => {
+    event.notification.close();
+    const url =
+        (event.notification.data && event.notification.data.url) || "/client";
+    event.waitUntil(
+        self.clients
+            .matchAll({ type: "window", includeUncontrolled: true })
+            .then((list) => {
+                for (const c of list) {
+                    if (c.url.includes(url) && "focus" in c) return c.focus();
+                }
+                if (self.clients.openWindow) return self.clients.openWindow(url);
+            }),
+    );
 });

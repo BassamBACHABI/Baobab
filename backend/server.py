@@ -22,6 +22,7 @@ from models import (
     PackageIn, WeighIn, PackageItemIn, TransitionIn, ShipmentIn, TrackingIn,
     PaymentIn, CostIn, ForgotIn, ResetIn, DeclareIn, ReceiveIn, AttachIn,
     QuoteIn, ShipmentUpdateIn, WebhookIn, SimulateIn, PrefIn,
+    PushSubscribeIn, PushUnsubscribeIn,
 )
 from security import (
     verify_password, hash_password, create_access_token, get_current_user, require_roles,
@@ -34,6 +35,7 @@ from statemachine import (
 )
 from payments_provider import provider as pay_provider
 from emailer import notify_event
+from push import push_to_user
 from seed import run_seed
 
 
@@ -438,6 +440,36 @@ async def set_notification_prefs(body: PrefIn, user=Depends(get_current_user)):
     return {"notify_non_essential": body.notify_non_essential}
 
 
+@api.get("/push/vapid-public-key")
+async def push_vapid_key():
+    return {"public_key": os.environ.get("VAPID_PUBLIC_KEY", "")}
+
+
+@api.post("/me/push/subscribe")
+async def push_subscribe(body: PushSubscribeIn, user=Depends(get_current_user)):
+    endpoint = body.subscription.get("endpoint")
+    if not endpoint:
+        raise HTTPException(status_code=400, detail="Abonnement push invalide")
+    await db.push_subscriptions.update_one(
+        {"endpoint": endpoint},
+        {
+            "$set": {
+                "user_id": user["id"], "endpoint": endpoint,
+                "subscription": body.subscription, "updated_at": now_utc(),
+            },
+            "$setOnInsert": {"created_at": now_utc()},
+        },
+        upsert=True,
+    )
+    return {"ok": True}
+
+
+@api.post("/me/push/unsubscribe")
+async def push_unsubscribe(body: PushUnsubscribeIn, user=Depends(get_current_user)):
+    await db.push_subscriptions.delete_one({"endpoint": body.endpoint, "user_id": user["id"]})
+    return {"ok": True}
+
+
 @api.get("/me/forwarding-address")
 async def my_forwarding(user=Depends(get_current_user)):
     docs = await db.forwarding_addresses.find({"user_id": user["id"]}).to_list(20)
@@ -631,6 +663,9 @@ async def create_shipment(body: QuoteIn, user=Depends(get_current_user)):
             ctx={"name": contact["name"], "reference": ref, "sid": sid,
                  "total_eur": snap.get("total_eur"), "total_xof": snap.get("total_xof")},
         )
+    await push_to_user(user["id"], "Devis prêt",
+                       f"Votre devis {ref} est disponible : {snap.get('total_eur')} €.",
+                       f"/client/shipments/{sid}")
     return serialize(await db.shipments.find_one({"_id": res.inserted_id}))
 
 
@@ -676,6 +711,9 @@ async def _process_payment(payment_id, result, actor):
                         ctx={"name": contact["name"], "reference": s.get("reference"), "sid": sid,
                              "amount": str(to_decimal(p.get("amount")) or ""), "currency": p.get("currency", "XOF")},
                     )
+                await push_to_user(s.get("user_id"), "Paiement confirmé",
+                                   f"Paiement reçu pour l'expédition {s.get('reference')}.",
+                                   f"/client/shipments/{sid}")
         return {"status": "PAID"}
     await transition_status("PAYMENT", payment_id, "FAILED", actor, "Échec du paiement")
     return {"status": "FAILED"}
@@ -935,6 +973,8 @@ async def admin_receive(body: ReceiveIn, user=Depends(require_roles("ADMIN", "OP
                      "weight": str(to_decimal(pkg.get("billable_weight_kg")) or "—"),
                      "status_label": STATUS_LABELS["PACKAGE"].get(pkg.get("status"), pkg.get("status"))},
             )
+        await push_to_user(pkg["user_id"], "Colis reçu",
+                           f"Votre colis {pkg.get('reference')} est arrivé au hub.", "/client/parcels")
     elif pkg.get("status") == "UNIDENTIFIED":
         admin_email = os.environ.get("ADMIN_EMAIL")
         if admin_email:
@@ -1089,6 +1129,13 @@ async def admin_ship_transition(sid: str, body: TransitionIn, user=Depends(requi
             ctx={"name": contact["name"], "reference": ship.get("reference"), "sid": sid,
                  "tracking_number": ship.get("tracking_number") or "—"},
         )
+    if body.to_status in ("SHIPPED", "ARRIVED_BENIN", "DELIVERED"):
+        pmsg = {
+            "SHIPPED": ("Expédition en route", f"{ship.get('reference')} a été expédiée."),
+            "ARRIVED_BENIN": ("Arrivé au Bénin", f"{ship.get('reference')} est arrivé au Bénin."),
+            "DELIVERED": ("Colis livré", f"{ship.get('reference')} a été livré."),
+        }[body.to_status]
+        await push_to_user(ship.get("user_id"), pmsg[0], pmsg[1], f"/client/shipments/{sid}")
     return serialize(await db.shipments.find_one({"_id": oid(sid)}))
 
 
