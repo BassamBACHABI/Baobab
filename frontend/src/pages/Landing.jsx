@@ -7,7 +7,6 @@ import {
   Plane,
   ShieldCheck,
   Package,
-  LayoutDashboard,
   Wallet,
   BellRing,
   Camera,
@@ -120,9 +119,6 @@ export default function Landing() {
           <Logo />
           <div className="flex items-center gap-2">
             <ThemeToggle />
-            <Button asChild variant="ghost" className="hidden rounded-xl sm:inline-flex" data-testid="landing-admin-link">
-              <Link to="/login">Back-office</Link>
-            </Button>
             <Button asChild className="rounded-xl bg-accent text-white hover:bg-[#D45A2C]" data-testid="landing-client-cta">
               <Link to="/login">Espace client</Link>
             </Button>
@@ -151,9 +147,6 @@ export default function Landing() {
               <div className="mt-8 flex flex-col gap-3 sm:flex-row">
                 <Button asChild size="lg" className="h-12 rounded-xl bg-accent px-7 text-base text-white shadow-cta hover:bg-[#D45A2C]" data-testid="hero-client-cta">
                   <Link to="/login">Commencer <ArrowRight className="ml-1.5 h-5 w-5" /></Link>
-                </Button>
-                <Button asChild variant="outline" size="lg" className="h-12 rounded-xl px-7 text-base" data-testid="hero-admin-cta">
-                  <Link to="/login"><LayoutDashboard className="mr-1.5 h-5 w-5" /> Back-office</Link>
                 </Button>
               </div>
               <div className="mt-6 flex flex-wrap items-center gap-x-5 gap-y-2 text-sm text-muted-foreground">
@@ -353,7 +346,6 @@ export default function Landing() {
           </div>
           <div className="flex flex-col gap-2 sm:items-end">
             <Link to="/login" className="text-sm text-muted-foreground hover:text-accent">Espace client</Link>
-            <Link to="/login" className="text-sm text-muted-foreground hover:text-accent">Back-office</Link>
             <p className="mt-2 text-xs text-muted-foreground">© {new Date().getFullYear()} Baobab Cargo · Transit Europe → Bénin</p>
           </div>
         </div>
