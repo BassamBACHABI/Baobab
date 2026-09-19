@@ -36,6 +36,8 @@ async def create_indexes():
     )
     await db.push_subscriptions.create_index("endpoint", unique=True)
     await db.push_subscriptions.create_index("user_id")
+    await db.proxy_orders.create_index("reference", unique=True)
+    await db.proxy_orders.create_index("user_id")
     await db.cost_records.create_index("shipment_id")
 
 
@@ -46,6 +48,8 @@ DEFAULT_SETTINGS = {
     "air_delivery_days_min": ("2", "int"),
     "air_delivery_days_max": ("3", "int"),
     "default_transport_mode": ("AIR", "str"),
+    "proxy_commission_percent": ("10", "num"),
+    "proxy_commission_min_eur": ("5", "num"),
 }
 
 

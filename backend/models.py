@@ -221,6 +221,26 @@ class SimulateIn(BaseModel):
     result: str  # success | failure
 
 
+class ProxyItemIn(BaseModel):
+    product_url: Optional[str] = None
+    name: str
+    variant: Optional[str] = None
+    quantity: int = 1
+    unit_price_est: Decimal = Decimal("0")
+    store: Optional[str] = None
+    notes: Optional[str] = None
+
+
+class ProxyOrderIn(BaseModel):
+    items: List[ProxyItemIn]
+    notes: Optional[str] = None
+
+
+class ProxyReceiveIn(BaseModel):
+    package_id: Optional[str] = None
+    reason: Optional[str] = None
+
+
 class PrefIn(BaseModel):
     notify_non_essential: bool
 

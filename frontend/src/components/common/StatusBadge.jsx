@@ -38,8 +38,14 @@ const PAYMENT = {
   CANCELLED: "Annulé",
 };
 
+const PROXY = {
+  REQUESTED: "Demande reçue",
+  QUOTED: "Devis disponible",
+  RECEIVED: "Reçu au hub",
+};
+
 // Accès à plat (STATUS_LABELS["DRAFT"]) ET imbriqué (STATUS_LABELS.SHIPMENT["DRAFT"]).
-export const STATUS_LABELS = { ...PACKAGE, ...SHIPMENT, ...PAYMENT, PACKAGE, SHIPMENT, PAYMENT };
+export const STATUS_LABELS = { ...PACKAGE, ...SHIPMENT, ...PAYMENT, ...PROXY, PACKAGE, SHIPMENT, PAYMENT };
 
 const STATUS_STYLES = {
   amber:
@@ -74,6 +80,9 @@ const STATUS_COLOR = {
   IN_TRANSIT: "sky",
   OUT_FOR_DELIVERY: "sky",
   INCIDENT: "red",
+  // Proxy Shopping
+  REQUESTED: "slate",
+  QUOTED: "amber",
   // Communs
   SHIPPED: "sky",
   ARRIVED_BENIN: "violet",

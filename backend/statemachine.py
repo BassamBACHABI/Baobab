@@ -42,10 +42,20 @@ PAYMENT_TRANSITIONS = {
     "REFUNDED": [],
 }
 
+# Proxy Shopping (Phase 2) — flux simple : Demande → Devis → Payé → Reçu
+PROXY_ORDER_TRANSITIONS = {
+    "REQUESTED": ["QUOTED", "CANCELLED"],
+    "QUOTED": ["PAID", "CANCELLED"],
+    "PAID": ["RECEIVED", "CANCELLED"],
+    "RECEIVED": [],
+    "CANCELLED": [],
+}
+
 MACHINES = {
     "PACKAGE": ("packages", PACKAGE_TRANSITIONS),
     "SHIPMENT": ("shipments", SHIPMENT_TRANSITIONS),
     "PAYMENT": ("payments", PAYMENT_TRANSITIONS),
+    "PROXY_ORDER": ("proxy_orders", PROXY_ORDER_TRANSITIONS),
 }
 
 # ---- Libellés FR (affichage) ----
@@ -66,9 +76,13 @@ STATUS_LABELS = {
         "PENDING": "En attente", "AUTHORIZED": "Autorisé", "PAID": "Payé",
         "FAILED": "Échoué", "REFUNDED": "Remboursé", "CANCELLED": "Annulé",
     },
+    "PROXY_ORDER": {
+        "REQUESTED": "Demande reçue", "QUOTED": "Devis disponible", "PAID": "Payé",
+        "RECEIVED": "Reçu au hub", "CANCELLED": "Annulé",
+    },
 }
 
-SENSITIVE_AUDIT = {"SHIPMENT", "PAYMENT"}
+SENSITIVE_AUDIT = {"SHIPMENT", "PAYMENT", "PROXY_ORDER"}
 
 
 async def write_audit(actor_id, action, entity_type, entity_id, before, after):

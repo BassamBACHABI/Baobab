@@ -1,5 +1,5 @@
 import { NavLink, Outlet, useLocation, useNavigate } from "react-router-dom";
-import { Home, Package, Truck, User, LogOut } from "lucide-react";
+import { Home, Package, Truck, ShoppingBag, User, LogOut } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/context/AuthContext";
 import { Logo } from "@/components/brand/Logo";
@@ -10,6 +10,7 @@ const NAV = [
   { label: "Accueil", icon: Home, to: "/client", end: true, id: "home" },
   { label: "Mes colis", icon: Package, to: "/client/parcels", id: "parcels" },
   { label: "Expéditions", icon: Truck, to: "/client/shipments", id: "shipments" },
+  { label: "Achats", icon: ShoppingBag, to: "/client/proxy", id: "proxy" },
   { label: "Profil", icon: User, to: "/client/profile", id: "profile" },
 ];
 

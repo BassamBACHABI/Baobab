@@ -4,7 +4,7 @@ import logging
 import secrets
 import base64
 from decimal import Decimal
-from datetime import timezone, timedelta
+from datetime import datetime, timezone, timedelta
 from urllib.parse import urlencode
 
 import requests
@@ -22,7 +22,7 @@ from models import (
     PackageIn, WeighIn, PackageItemIn, TransitionIn, ShipmentIn, TrackingIn,
     PaymentIn, CostIn, ForgotIn, ResetIn, DeclareIn, ReceiveIn, AttachIn,
     QuoteIn, ShipmentUpdateIn, WebhookIn, SimulateIn, PrefIn,
-    PushSubscribeIn, PushUnsubscribeIn,
+    PushSubscribeIn, PushUnsubscribeIn, ProxyOrderIn, ProxyReceiveIn,
 )
 from security import (
     verify_password, hash_password, create_access_token, get_current_user, require_roles,
@@ -714,6 +714,14 @@ async def _process_payment(payment_id, result, actor):
                 await push_to_user(s.get("user_id"), "Paiement confirmé",
                                    f"Paiement reçu pour l'expédition {s.get('reference')}.",
                                    f"/client/shipments/{sid}")
+        pxid = p.get("order_id")
+        if pxid:
+            po = await db.proxy_orders.find_one({"_id": oid(pxid)})
+            if po and po.get("status") == "QUOTED":
+                await transition_status("PROXY_ORDER", pxid, "PAID", actor, "Paiement confirmé")
+                await push_to_user(po.get("user_id"), "Paiement confirmé",
+                                   f"Votre commande d'achat {po.get('reference')} est payée. Nous procédons à l'achat.",
+                                   f"/client/proxy/{pxid}")
         return {"status": "PAID"}
     await transition_status("PAYMENT", payment_id, "FAILED", actor, "Échec du paiement")
     return {"status": "FAILED"}
@@ -761,6 +769,84 @@ async def create_my_payment(body: PaymentIn, user=Depends(get_current_user)):
         "created_at": now_utc(),
     }
     res = await db.payments.insert_one(doc)
+    return serialize(await db.payments.find_one({"_id": res.inserted_id}))
+
+
+# ============ PROXY SHOPPING (Phase 2) — client ============
+async def _compute_proxy_quote(items):
+    items_total = Decimal("0")
+    for it in items:
+        items_total += (to_decimal(it.get("unit_price_est")) or Decimal("0")) * Decimal(int(it.get("quantity", 1)))
+    pct = to_decimal(await get_setting("proxy_commission_percent", 10))
+    mn = to_decimal(await get_setting("proxy_commission_min_eur", 5))
+    rate = to_decimal(await get_setting("eur_xof_rate", 655.957))
+    commission = max(items_total * pct / Decimal("100"), mn)
+    total_eur = items_total + commission
+    total_xof = total_eur * rate
+    snap = {
+        "items_total_eur": _q2(items_total), "commission_percent": str(pct),
+        "commission_min_eur": str(mn), "commission_eur": _q2(commission),
+        "total_eur": _q2(total_eur), "total_xof": _q2(total_xof), "eur_xof_rate": str(rate),
+    }
+    return items_total, commission, total_eur, total_xof, snap
+
+
+@api.get("/me/proxy-orders")
+async def my_proxy_orders(user=Depends(get_current_user)):
+    return serialize(await db.proxy_orders.find({"user_id": user["id"]}).sort("created_at", -1).to_list(200))
+
+
+@api.get("/me/proxy-orders/{pid}")
+async def my_proxy_order(pid: str, user=Depends(get_current_user)):
+    doc = await db.proxy_orders.find_one({"_id": oid(pid)})
+    if not doc or not await owns_or_staff(user, doc.get("user_id")):
+        raise HTTPException(status_code=404, detail="Commande introuvable")
+    out = serialize(doc)
+    out["payments"] = serialize(await db.payments.find({"order_id": pid}).sort("created_at", -1).to_list(50))
+    out["history"] = serialize(await db.status_history.find({"entity_type": "PROXY_ORDER", "entity_id": pid}).sort("created_at", 1).to_list(200))
+    return out
+
+
+@api.post("/me/proxy-orders")
+async def create_proxy_order(body: ProxyOrderIn, user=Depends(get_current_user)):
+    if not body.items:
+        raise HTTPException(status_code=400, detail="Ajoutez au moins un article")
+    ref = await gen_reference("PXY", db.proxy_orders)
+    items = []
+    for it in body.items:
+        d = it.model_dump()
+        d["unit_price_est"] = to_money(d["unit_price_est"])
+        items.append(d)
+    doc = {
+        "reference": ref, "user_id": user["id"], "items": items, "notes": body.notes,
+        "currency": "EUR", "quote": None, "items_total_eur": None, "commission_eur": None,
+        "total_eur": None, "total_xof": None, "package_id": None,
+        "status": "REQUESTED", "created_at": now_utc(),
+    }
+    res = await db.proxy_orders.insert_one(doc)
+    pid = str(res.inserted_id)
+    await db.status_history.insert_one({"entity_type": "PROXY_ORDER", "entity_id": pid, "from_status": None, "to_status": "REQUESTED", "actor_id": user["id"], "reason": "Demande client", "created_at": now_utc()})
+    return serialize(await db.proxy_orders.find_one({"_id": res.inserted_id}))
+
+
+@api.post("/me/proxy-orders/{pid}/pay")
+async def pay_proxy_order(pid: str, user=Depends(get_current_user)):
+    po = await db.proxy_orders.find_one({"_id": oid(pid)})
+    if not po or po.get("user_id") != user["id"]:
+        raise HTTPException(status_code=404, detail="Commande introuvable")
+    if po.get("status") != "QUOTED":
+        raise HTTPException(status_code=409, detail="La commande n'a pas de devis à régler")
+    existing = await db.payments.find_one({"order_id": pid, "status": {"$in": ["PENDING", "AUTHORIZED", "PAID"]}})
+    if existing:
+        return serialize(existing)
+    doc = {
+        "user_id": user["id"], "shipment_id": None, "order_id": pid, "provider": pay_provider.name,
+        "transaction_reference": None, "amount": po.get("total_xof"), "currency": "XOF",
+        "status": "PENDING", "paid_at": None, "created_at": now_utc(),
+    }
+    res = await db.payments.insert_one(doc)
+    checkout = pay_provider.initiate(str(res.inserted_id), _q2(to_decimal(po.get("total_xof")) or 0), "XOF")
+    await db.payments.update_one({"_id": res.inserted_id}, {"$set": {"transaction_reference": checkout["checkout_ref"]}})
     return serialize(await db.payments.find_one({"_id": res.inserted_id}))
 
 
@@ -1181,8 +1267,82 @@ async def admin_add_cost(body: CostIn, user=Depends(require_roles("ADMIN"))):
     return serialize(await db.cost_records.find_one({"_id": res.inserted_id}))
 
 
+# ============ ADMIN : proxy shopping (ADMIN uniquement — contient des montants) ============
+@api.get("/admin/proxy-orders")
+async def admin_proxy_orders(user=Depends(require_roles("ADMIN"))):
+    orders = await db.proxy_orders.find().sort("created_at", -1).to_list(500)
+    out = []
+    for o in orders:
+        s = serialize(o)
+        prof = await db.profiles.find_one({"_id": oid(o["user_id"])}) if o.get("user_id") else None
+        s["client_name"] = f"{prof.get('first_name','')} {prof.get('last_name','')}".strip() if prof else None
+        out.append(s)
+    return out
+
+
+@api.get("/admin/proxy-orders/{pid}")
+async def admin_proxy_order(pid: str, user=Depends(require_roles("ADMIN"))):
+    doc = await db.proxy_orders.find_one({"_id": oid(pid)})
+    if not doc:
+        raise HTTPException(status_code=404, detail="Commande introuvable")
+    out = serialize(doc)
+    if doc.get("user_id"):
+        prof = await db.profiles.find_one({"_id": oid(doc["user_id"])})
+        out["client"] = serialize(prof) if prof else None
+        fwd = await db.forwarding_addresses.find_one({"user_id": doc["user_id"]})
+        out["customer_reference"] = fwd["customer_reference"] if fwd else None
+    out["payments"] = serialize(await db.payments.find({"order_id": pid}).to_list(50))
+    out["history"] = serialize(await db.status_history.find({"entity_type": "PROXY_ORDER", "entity_id": pid}).sort("created_at", 1).to_list(200))
+    return out
+
+
+@api.post("/admin/proxy-orders/{pid}/quote")
+async def admin_proxy_quote(pid: str, user=Depends(require_roles("ADMIN"))):
+    po = await db.proxy_orders.find_one({"_id": oid(pid)})
+    if not po:
+        raise HTTPException(status_code=404, detail="Commande introuvable")
+    if po.get("status") not in ("REQUESTED", "QUOTED"):
+        raise HTTPException(status_code=409, detail="Devis impossible pour ce statut")
+    items_total, commission, total_eur, total_xof, snap = await _compute_proxy_quote(po.get("items", []))
+    await db.proxy_orders.update_one({"_id": oid(pid)}, {"$set": {
+        "quote": snap, "items_total_eur": to_money(items_total), "commission_eur": to_money(commission),
+        "total_eur": to_money(total_eur), "total_xof": to_money(total_xof), "updated_at": now_utc(),
+    }})
+    await write_audit(user["id"], "PROXY_QUOTE", "PROXY_ORDER", pid, None, snap)
+    if po.get("status") == "REQUESTED":
+        await transition_status("PROXY_ORDER", pid, "QUOTED", user["id"], "Devis établi")
+    contact = await _client_contact(po.get("user_id"))
+    if contact:
+        await push_to_user(po.get("user_id"), "Devis disponible",
+                           f"Votre devis d'achat {po.get('reference')} : {snap['total_eur']} €.",
+                           f"/client/proxy/{pid}")
+    return serialize(await db.proxy_orders.find_one({"_id": oid(pid)}))
+
+
+@api.post("/admin/proxy-orders/{pid}/receive")
+async def admin_proxy_receive(pid: str, body: ProxyReceiveIn, user=Depends(require_roles("ADMIN"))):
+    po = await db.proxy_orders.find_one({"_id": oid(pid)})
+    if not po:
+        raise HTTPException(status_code=404, detail="Commande introuvable")
+    if body.package_id:
+        await db.proxy_orders.update_one({"_id": oid(pid)}, {"$set": {"package_id": body.package_id, "updated_at": now_utc()}})
+    await transition_status("PROXY_ORDER", pid, "RECEIVED", user["id"], body.reason or "Reçu au hub")
+    await push_to_user(po.get("user_id"), "Achat reçu au hub",
+                       f"Les articles de votre commande {po.get('reference')} sont arrivés au hub.",
+                       f"/client/proxy/{pid}")
+    return serialize(await db.proxy_orders.find_one({"_id": oid(pid)}))
+
+
+@api.post("/admin/proxy-orders/{pid}/cancel")
+async def admin_proxy_cancel(pid: str, user=Depends(require_roles("ADMIN"))):
+    po = await db.proxy_orders.find_one({"_id": oid(pid)})
+    if not po:
+        raise HTTPException(status_code=404, detail="Commande introuvable")
+    await transition_status("PROXY_ORDER", pid, "CANCELLED", user["id"], "Annulée par l'admin")
+    return serialize(await db.proxy_orders.find_one({"_id": oid(pid)}))
+
+
 # ============ ADMIN : tableau de bord & marge ============
-from datetime import datetime
 
 
 def _week_start():

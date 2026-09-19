@@ -5,6 +5,7 @@ import {
   Users,
   PackageCheck,
   Ship,
+  ShoppingBag,
   Settings,
   Menu,
   ArrowLeft,
@@ -22,13 +23,17 @@ const NAV = [
   { label: "Clients", icon: Users, to: "/admin/clients", id: "clients" },
   { label: "Colis", icon: PackageCheck, to: "/admin/parcels", id: "parcels" },
   { label: "Expéditions", icon: Ship, to: "/admin/shipments", id: "shipments" },
+  { label: "Achats proxy", icon: ShoppingBag, to: "/admin/proxy", id: "proxy", adminOnly: true },
   { label: "Paramètres", icon: Settings, to: "/admin/settings", id: "settings" },
 ];
 
 function NavItems({ onNavigate }) {
+  const { user } = useAuth();
+  const isAdmin = user?.roles?.includes("ADMIN");
+  const items = NAV.filter((i) => !i.adminOnly || isAdmin);
   return (
     <nav className="space-y-1" data-testid="admin-nav">
-      {NAV.map((item) => (
+      {items.map((item) => (
         <NavLink
           key={item.id}
           to={item.to}

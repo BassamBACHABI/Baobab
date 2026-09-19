@@ -22,12 +22,16 @@ import ClientPackageDetail from "@/pages/client/ClientPackageDetail";
 import ClientShipments from "@/pages/client/ClientShipments";
 import ClientShipmentNew from "@/pages/client/ClientShipmentNew";
 import ClientShipmentDetail from "@/pages/client/ClientShipmentDetail";
+import ClientProxy from "@/pages/client/ClientProxy";
+import ClientProxyDetail from "@/pages/client/ClientProxyDetail";
 import ClientProfile from "@/pages/client/ClientProfile";
 import AdminDashboard from "@/pages/admin/AdminDashboard";
 import AdminClients from "@/pages/admin/AdminClients";
 import AdminParcels from "@/pages/admin/AdminParcels";
 import AdminShipments from "@/pages/admin/AdminShipments";
 import AdminShipmentDetail from "@/pages/admin/AdminShipmentDetail";
+import AdminProxy from "@/pages/admin/AdminProxy";
+import AdminProxyDetail from "@/pages/admin/AdminProxyDetail";
 import AdminSettings from "@/pages/admin/AdminSettings";
 
 function AppRoutes() {
@@ -52,6 +56,8 @@ function AppRoutes() {
           <Route path="shipments" element={<ClientShipments />} />
           <Route path="shipments/new" element={<ClientShipmentNew />} />
           <Route path="shipments/:id" element={<ClientShipmentDetail />} />
+          <Route path="proxy" element={<ClientProxy />} />
+          <Route path="proxy/:id" element={<ClientProxyDetail />} />
           <Route path="profile" element={<ClientProfile />} />
         </Route>
       </Route>
@@ -63,6 +69,8 @@ function AppRoutes() {
           <Route path="parcels" element={<AdminParcels />} />
           <Route path="shipments" element={<AdminShipments />} />
           <Route path="shipments/:id" element={<AdminShipmentDetail />} />
+          <Route path="proxy" element={<AdminProxy />} />
+          <Route path="proxy/:id" element={<AdminProxyDetail />} />
           <Route path="settings" element={<AdminSettings />} />
         </Route>
       </Route>
