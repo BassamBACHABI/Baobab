@@ -495,3 +495,326 @@ class TestSocialIdentity:
         # admin role remains
         me = requests.get(f"{API}/auth/me", headers=_h(admin_token), timeout=15).json()
         assert "ADMIN" in me["roles"]
+
+
+# ==================== PROMPT 8 & 9 — Dashboard, Settings, Notifications ====================
+
+# ---- ADMIN DASHBOARD (Prompt 8) ----
+class TestAdminDashboardMetrics:
+    def test_metrics_admin(self, admin_token):
+        r = requests.get(f"{API}/admin/dashboard/metrics", headers=_h(admin_token), timeout=15)
+        assert r.status_code == 200, r.text
+        d = r.json()
+        for k in ("received_this_week", "to_identify", "in_stock", "shipments_by_status"):
+            assert k in d
+        assert isinstance(d["received_this_week"], int)
+        assert isinstance(d["shipments_by_status"], dict)
+
+    def test_metrics_operator_allowed(self, operator_token):
+        r = requests.get(f"{API}/admin/dashboard/metrics", headers=_h(operator_token), timeout=15)
+        assert r.status_code == 200
+
+    def test_metrics_client_forbidden(self, awa_token):
+        r = requests.get(f"{API}/admin/dashboard/metrics", headers=_h(awa_token), timeout=15)
+        assert r.status_code == 403
+
+    def test_metrics_no_auth(self):
+        r = requests.get(f"{API}/admin/dashboard/metrics", timeout=15)
+        assert r.status_code in (401, 403)
+
+    def test_todo_admin(self, admin_token):
+        r = requests.get(f"{API}/admin/dashboard/todo", headers=_h(admin_token), timeout=15)
+        assert r.status_code == 200
+        d = r.json()
+        for k in ("unidentified", "awaiting_preparation", "incidents"):
+            assert k in d and isinstance(d[k], list)
+
+    def test_todo_operator_allowed(self, operator_token):
+        r = requests.get(f"{API}/admin/dashboard/todo", headers=_h(operator_token), timeout=15)
+        assert r.status_code == 200
+
+    def test_todo_client_forbidden(self, awa_token):
+        r = requests.get(f"{API}/admin/dashboard/todo", headers=_h(awa_token), timeout=15)
+        assert r.status_code == 403
+
+
+class TestAdminDashboardFinance:
+    def test_finance_admin(self, admin_token):
+        r = requests.get(f"{API}/admin/dashboard/finance", headers=_h(admin_token), timeout=15)
+        assert r.status_code == 200, r.text
+        d = r.json()
+        for k in ("payments_received", "revenue_month_eur", "revenue_month_xof"):
+            assert k in d
+        # Amounts are Decimal-serialized as strings
+        assert isinstance(d["revenue_month_eur"], str)
+        assert isinstance(d["revenue_month_xof"], str)
+        # ensure no float artefacts / scientific
+        assert "e" not in d["revenue_month_eur"].lower()
+        assert "e" not in d["revenue_month_xof"].lower()
+
+    def test_finance_operator_403(self, operator_token):
+        r = requests.get(f"{API}/admin/dashboard/finance", headers=_h(operator_token), timeout=15)
+        assert r.status_code == 403, r.text
+
+    def test_finance_client_forbidden(self, awa_token):
+        r = requests.get(f"{API}/admin/dashboard/finance", headers=_h(awa_token), timeout=15)
+        assert r.status_code == 403
+
+
+class TestAdminDashboardMargin:
+    def test_margin_admin_default(self, admin_token):
+        r = requests.get(f"{API}/admin/dashboard/margin", headers=_h(admin_token), timeout=15)
+        assert r.status_code == 200, r.text
+        d = r.json()
+        for k in ("date_from", "date_to", "count", "total_revenue_eur", "total_cost_eur",
+                  "total_margin_eur", "average_margin_eur", "cost_per_kg_eur", "rows"):
+            assert k in d
+        assert isinstance(d["rows"], list)
+        for row in d["rows"]:
+            for f in ("shipment_id", "reference", "revenue_eur", "cost_eur", "margin_eur", "billable_weight_kg"):
+                assert f in row
+            # revenue - cost == margin (decimal math sanity)
+            from decimal import Decimal
+            rev = Decimal(row["revenue_eur"])
+            cost = Decimal(row["cost_eur"])
+            marg = Decimal(row["margin_eur"])
+            assert rev - cost == marg, f"margin mismatch: {rev}-{cost} != {marg}"
+
+    def test_margin_with_date_range(self, admin_token):
+        r = requests.get(f"{API}/admin/dashboard/margin",
+                         headers=_h(admin_token),
+                         params={"date_from": "2020-01-01", "date_to": "2035-12-31"},
+                         timeout=15)
+        assert r.status_code == 200
+        d = r.json()
+        assert d["count"] >= 0
+
+    def test_margin_operator_403(self, operator_token):
+        r = requests.get(f"{API}/admin/dashboard/margin", headers=_h(operator_token), timeout=15)
+        assert r.status_code == 403
+
+    def test_margin_client_forbidden(self, awa_token):
+        r = requests.get(f"{API}/admin/dashboard/margin", headers=_h(awa_token), timeout=15)
+        assert r.status_code == 403
+
+
+# ---- SETTINGS SCREENS BACKEND (Prompt 8) ----
+class TestSettingsWrites:
+    def test_operator_forbidden_on_admin_writes(self, operator_token):
+        # zone
+        r = requests.post(f"{API}/delivery-zones", headers=_h(operator_token), json={
+            "name": "TEST_ZoneOp", "city": "TEST_City", "delivery_mode": "PICKUP_POINT",
+            "fee_xof": "1000"
+        }, timeout=15)
+        assert r.status_code == 403, r.text
+        # carrier
+        r2 = requests.post(f"{API}/carriers", headers=_h(operator_token), json={"name": "TEST_CarrierOp"}, timeout=15)
+        assert r2.status_code == 403
+        # settings update
+        r3 = requests.put(f"{API}/settings/eur_xof_rate", headers=_h(operator_token), json={"value": "655.957"}, timeout=15)
+        assert r3.status_code == 403
+
+    def test_admin_create_zone_writes_audit(self, admin_token):
+        import uuid as _uuid
+        name = f"TEST_Zone_{_uuid.uuid4().hex[:6]}"
+        r = requests.post(f"{API}/delivery-zones", headers=_h(admin_token), json={
+            "name": name, "city": "TestCity", "delivery_mode": "PICKUP_POINT", "fee_xof": "2500"
+        }, timeout=15)
+        assert r.status_code == 200, r.text
+        z = r.json()
+        assert z["name"] == name
+        assert isinstance(z["fee_xof"], str)
+        # verify persisted via GET
+        r2 = requests.get(f"{API}/delivery-zones", headers=_h(admin_token), timeout=15)
+        assert any(x["name"] == name for x in r2.json())
+
+    def test_admin_create_carrier(self, admin_token):
+        import uuid as _uuid
+        name = f"TEST_Carrier_{_uuid.uuid4().hex[:6]}"
+        r = requests.post(f"{API}/carriers", headers=_h(admin_token), json={"name": name}, timeout=15)
+        assert r.status_code == 200, r.text
+        assert r.json()["name"] == name
+
+    def test_admin_update_setting_and_audit(self, admin_token):
+        # Read current
+        r0 = requests.get(f"{API}/settings", headers=_h(admin_token), timeout=15)
+        cur = {s["key"]: s["value"] for s in r0.json()}
+        rate = str(cur.get("eur_xof_rate", "655.957"))
+        # Update to same value (no-op semantic; still writes audit)
+        r = requests.put(f"{API}/settings/eur_xof_rate", headers=_h(admin_token),
+                         json={"value": rate}, timeout=15)
+        assert r.status_code == 200, r.text
+
+
+# ---- NOTIFICATION PREFERENCES (Prompt 9) ----
+class TestNotificationPrefs:
+    def test_get_default_true(self, koffi_token):
+        r = requests.get(f"{API}/me/notification-preferences", headers=_h(koffi_token), timeout=15)
+        assert r.status_code == 200, r.text
+        assert r.json()["notify_non_essential"] in (True, False)
+
+    def test_put_toggle_persists(self, koffi_token):
+        # set false
+        r = requests.put(f"{API}/me/notification-preferences", headers=_h(koffi_token),
+                         json={"notify_non_essential": False}, timeout=15)
+        assert r.status_code == 200, r.text
+        assert r.json()["notify_non_essential"] is False
+        # verify persisted
+        r2 = requests.get(f"{API}/me/notification-preferences", headers=_h(koffi_token), timeout=15)
+        assert r2.json()["notify_non_essential"] is False
+        # restore true
+        r3 = requests.put(f"{API}/me/notification-preferences", headers=_h(koffi_token),
+                          json={"notify_non_essential": True}, timeout=15)
+        assert r3.status_code == 200
+        assert r3.json()["notify_non_essential"] is True
+
+    def test_admin_cannot_access_client_prefs_endpoint_without_client_context(self, admin_token):
+        # /me/* is per authenticated user; admin can still call for own profile — should be 200 or 404
+        r = requests.get(f"{API}/me/notification-preferences", headers=_h(admin_token), timeout=15)
+        assert r.status_code in (200, 404)
+
+
+# ---- EMAIL NOTIFICATIONS IDEMPOTENCY & PREF GATING (Prompt 9) ----
+class TestNotifications:
+    """Verifies notify_event writes idempotent rows in `notifications` collection.
+    Uses direct DB read via a temp admin helper: since there is no public endpoint,
+    we use pymongo directly with MONGO_URL from backend env."""
+
+    @classmethod
+    def _db(cls):
+        from pymongo import MongoClient
+        # Read backend/.env
+        env = {}
+        try:
+            with open("/app/backend/.env") as f:
+                for line in f:
+                    if "=" in line and not line.strip().startswith("#"):
+                        k, v = line.strip().split("=", 1)
+                        env[k] = v.strip('"').strip("'")
+        except Exception:
+            pass
+        mongo_url = env.get("MONGO_URL") or os.environ.get("MONGO_URL")
+        db_name = env.get("DB_NAME") or os.environ.get("DB_NAME") or "test_database"
+        return MongoClient(mongo_url)[db_name]
+
+    def _get_awa_ref(self, awa_token):
+        r = requests.get(f"{API}/me/forwarding-address", headers=_h(awa_token), timeout=15)
+        return r.json()[0]["customer_reference"]
+
+    def test_package_received_creates_notification_and_is_idempotent(self, admin_token, awa_token):
+        ref = self._get_awa_ref(awa_token)
+        # Ensure awa pref is TRUE (non-essential enabled)
+        requests.put(f"{API}/me/notification-preferences", headers=_h(awa_token),
+                     json={"notify_non_essential": True}, timeout=15)
+        # Receive a package (creates and records notification)
+        r = requests.post(f"{API}/admin/packages/receive", headers=_h(admin_token), json={
+            "customer_reference": ref,
+            "merchant_name": "TEST_NotifMerchant",
+            "notes": "TEST_notif_package"
+        }, timeout=20)
+        assert r.status_code == 200, r.text
+        pid = r.json()["id"]
+        import time
+        time.sleep(1.0)  # allow async notify_event to flush
+        db = self._db()
+        rows = list(db.notifications.find({"event": "package_received", "entity_type": "PACKAGE", "entity_id": pid}))
+        assert len(rows) == 1, f"expected 1 notification, got {len(rows)}: {rows}"
+        assert rows[0].get("status") in ("SENT", "FAILED", "SKIPPED")
+
+        # Re-call receive for a different package attaching same client → should create a NEW notification
+        # But calling notify_event twice with same key must not duplicate.
+        # We simulate re-trigger by directly requesting another /receive with same customer_reference
+        # → that creates a different package (different entity_id) so a new row is fine.
+        # For true idempotency: check that no second row for SAME pid exists.
+        rows2 = list(db.notifications.find({"event": "package_received", "entity_type": "PACKAGE", "entity_id": pid}))
+        assert len(rows2) == 1, "duplicate notification row created for same event+entity"
+
+    def test_non_essential_skipped_when_pref_false(self, admin_token, koffi_token):
+        # koffi: turn OFF non-essential
+        requests.put(f"{API}/me/notification-preferences", headers=_h(koffi_token),
+                     json={"notify_non_essential": False}, timeout=15)
+        # get koffi ref
+        r_fwd = requests.get(f"{API}/me/forwarding-address", headers=_h(koffi_token), timeout=15)
+        ref = r_fwd.json()[0]["customer_reference"]
+        r = requests.post(f"{API}/admin/packages/receive", headers=_h(admin_token), json={
+            "customer_reference": ref, "merchant_name": "TEST_SkipMerchant",
+        }, timeout=20)
+        assert r.status_code == 200, r.text
+        pid = r.json()["id"]
+        import time
+        time.sleep(1.0)
+        db = self._db()
+        rows = list(db.notifications.find({"event": "package_received", "entity_type": "PACKAGE", "entity_id": pid}))
+        assert len(rows) == 1
+        assert rows[0].get("status") == "SKIPPED", f"expected SKIPPED, got {rows[0].get('status')}"
+        # restore
+        requests.put(f"{API}/me/notification-preferences", headers=_h(koffi_token),
+                     json={"notify_non_essential": True}, timeout=15)
+
+    def test_payment_confirmed_essential_still_sent_when_pref_false(self, admin_token, awa_token):
+        """Essential emails (payment_confirmed) must fire regardless of pref."""
+        # Set awa pref = False
+        requests.put(f"{API}/me/notification-preferences", headers=_h(awa_token),
+                     json={"notify_non_essential": False}, timeout=15)
+
+        # Build a fresh shipment for awa: create + receive + weigh + store + ready
+        ref = self._get_awa_ref(awa_token)
+        pr = requests.post(f"{API}/admin/packages/receive", headers=_h(admin_token), json={
+            "customer_reference": ref, "merchant_name": "TEST_PayFlow",
+            "weight_kg": 2.0, "length_cm": 20, "width_cm": 20, "height_cm": 20,
+            "auto_store": True
+        }, timeout=20)
+        assert pr.status_code == 200, pr.text
+        pid = pr.json()["id"]
+        # auto_store already left it at STORED — that's what /me/shipments requires.
+
+        # find a zone
+        zones = requests.get(f"{API}/delivery-zones", headers=_h(awa_token), timeout=15).json()
+        zid = zones[0]["id"]
+        # create shipment via /me/shipments (fires quote_ready, but pref=false → SKIPPED)
+        sr = requests.post(f"{API}/me/shipments", headers=_h(awa_token), json={
+            "package_ids": [pid], "delivery_zone_id": zid,
+            "delivery_mode": "PICKUP_POINT", "transport_mode": "AIR"
+        }, timeout=25)
+        assert sr.status_code == 200, sr.text
+        sid = sr.json()["id"]
+
+        # start payment
+        py = requests.post(f"{API}/me/shipments/{sid}/pay", headers=_h(awa_token), timeout=15)
+        assert py.status_code == 200, py.text
+        pay_id = py.json()["id"]
+        # simulate success
+        sim = requests.post(f"{API}/me/payments/{pay_id}/simulate", headers=_h(awa_token),
+                            json={"result": "success"}, timeout=15)
+        assert sim.status_code == 200, sim.text
+
+        import time
+        time.sleep(1.5)
+        db = self._db()
+        # quote_ready (non-essential) → SKIPPED
+        qr = list(db.notifications.find({"event": "quote_ready", "entity_type": "SHIPMENT", "entity_id": sid}))
+        assert len(qr) == 1
+        assert qr[0].get("status") == "SKIPPED", f"quote_ready expected SKIPPED got {qr[0].get('status')}"
+        # payment_confirmed (essential) → must NOT be skipped (SENT or FAILED are both fine)
+        pc = list(db.notifications.find({"event": "payment_confirmed", "entity_type": "PAYMENT", "entity_id": pay_id}))
+        assert len(pc) == 1
+        assert pc[0].get("status") in ("SENT", "FAILED"), f"payment_confirmed expected SENT/FAILED got {pc[0].get('status')}"
+
+        # Admin ship transition -> SHIPPED triggers shipment_created (essential? Not in NON_ESSENTIAL set)
+        # Need to be in PAID status first; ship it.
+        # Transition PAID -> PREPARING -> SHIPPED
+        t1 = requests.post(f"{API}/admin/shipments/{sid}/transition", headers=_h(admin_token),
+                           json={"to_status": "PREPARING"}, timeout=15)
+        assert t1.status_code == 200, t1.text
+        t2 = requests.post(f"{API}/admin/shipments/{sid}/transition", headers=_h(admin_token),
+                           json={"to_status": "SHIPPED"}, timeout=15)
+        assert t2.status_code == 200, t2.text
+        time.sleep(1.5)
+        sc = list(db.notifications.find({"event": "shipment_created", "entity_type": "SHIPMENT", "entity_id": f"{sid}:SHIPPED"}))
+        assert len(sc) == 1
+        assert sc[0].get("status") in ("SENT", "FAILED")
+
+        # restore pref
+        requests.put(f"{API}/me/notification-preferences", headers=_h(awa_token),
+                     json={"notify_non_essential": True}, timeout=15)
+

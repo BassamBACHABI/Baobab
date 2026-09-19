@@ -65,12 +65,12 @@ Marque retenue : **Baobab Cargo** (nom court « Baobab »).
 - PWA : manifest.json (name/short_name/couleurs/standalone/portrait/icônes 192·512·maskable), service worker (cache statique + offline.html FR, prod-only, hors iframe), meta iOS + theme-color, bannière d'installation discrète (beforeinstallprompt + aide iOS).
 - Vérifié : 360px / tablette / desktop, clair & sombre ; a11y du drawer corrigée. Testing agent frontend : 95%, aucun blocage.
 
+## Fait — Prompts 8, 9 & 10 (2026-06 — Dashboard/marge, e-mails, audit)
+- **Prompt 8 — Tableau de bord admin & marge** : endpoints `/admin/dashboard/metrics` (colis reçus semaine, à identifier, en stock, expéditions par statut), `/finance` (paiements reçus, CA du mois EUR+XOF), `/margin?date_from&date_to` (revenus−coûts=marge par expédition, totaux, marge moyenne, coût moyen/kg), `/todo` (à traiter aujourd'hui). **RBAC strict serveur** : OPERATOR 200 sur metrics/todo, **403 sur finance/margin** ; CLIENT 403 partout. Écrans Paramètres (onglets Général/Hubs/Transporteurs/Zones/Tarifs) ; toute écriture journalisée `audit_log`. Montants Decimal128. Testing agent : 58/58 backend, frontend OK.
+- **Prompt 9 — Notifications e-mail** : Resend géré par Emergent (`emailer.py`, garde-fou `_assert_safe_email`), marque **Baobab Cargo**, modèles FR. Événements : colis reçu, colis à identifier (admin), devis dispo, paiement confirmé, expédition expédiée (n° suivi), arrivée Bénin, livraison. Table `notifications` **idempotente** (index unique event+entity). Préférences client (`/me/notification-preferences`) : e-mails non essentiels activables (essentiels toujours envoyés). Clés en secrets uniquement.
+- **Prompt 10 — Audit sécurité/qualité** : rapport complet dans `/app/memory/SECURITY_AUDIT.md` (isolation par table, 10 scénarios d'attaque tous en échec via curl, transitions 100 % serveur+historisées, aucun secret côté client, décimaux exacts + idempotence + snapshot figé, PWA, responsive/thèmes). **Correctif** : statuts désormais affichés en **français** (StatusBadge remappé sur les vrais codes EN→libellés FR + couleurs).
+
 ## Backlog priorisé (prochains prompts, ne pas anticiper)
-- **P0 Prompt 2+** : Auth (email/mdp + Google + Apple, vérif serveur), modèle utilisateurs + `user_roles`, référence client unique, adresse de réception.
-- **P0** : Modèles Colis (réception, pesée) et Expéditions + machine à états serveur + `status_history`.
-- **P1** : Paramètres admin (taux de change EUR/XOF, tarifs, zones, diviseur volumétrique) en base.
-- **P1** : Calcul de coût d'expédition côté serveur + snapshot figé ; paiement.
-- **P2** : Proxy Shopping ; multi-hubs / multi-pays.
 
 ## Prochaines actions
 - Attendre le Prompt 2 de l'utilisateur (probablement Auth + rôles + adresse de réception).

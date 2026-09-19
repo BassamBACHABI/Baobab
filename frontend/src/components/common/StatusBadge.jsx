@@ -1,18 +1,45 @@
 import { cn } from "@/lib/utils";
 
 // Codes de statut en anglais en base, libellés français à l'affichage.
-export const STATUS_LABELS = {
-  created: "Créé",
-  pending: "En attente",
-  received: "Reçu au hub",
-  weighed: "Pesé",
-  ready: "Prêt à expédier",
-  paid: "Payé",
-  in_transit: "En transit",
-  customs: "En douane",
-  delivered: "Livré",
-  cancelled: "Annulé",
+const PACKAGE = {
+  EXPECTED: "Attendu",
+  UNIDENTIFIED: "Non identifié",
+  RECEIVED: "Reçu au hub",
+  INSPECTED: "Inspecté",
+  STORED: "Stocké",
+  READY_TO_SHIP: "Prêt à expédier",
+  SHIPPED: "Expédié",
+  ARRIVED_BENIN: "Arrivé au Bénin",
+  DELIVERED: "Livré",
+  DAMAGED: "Endommagé",
+  REFUSED: "Refusé",
+  RETURNED: "Retourné",
 };
+
+const SHIPMENT = {
+  DRAFT: "Brouillon",
+  AWAITING_PAYMENT: "En attente de paiement",
+  PAID: "Payé",
+  PREPARING: "En préparation",
+  SHIPPED: "Expédié",
+  IN_TRANSIT: "En transit",
+  ARRIVED_BENIN: "Arrivé au Bénin",
+  OUT_FOR_DELIVERY: "En cours de livraison",
+  DELIVERED: "Livré",
+  INCIDENT: "Incident",
+};
+
+const PAYMENT = {
+  PENDING: "En attente",
+  AUTHORIZED: "Autorisé",
+  PAID: "Payé",
+  FAILED: "Échoué",
+  REFUNDED: "Remboursé",
+  CANCELLED: "Annulé",
+};
+
+// Accès à plat (STATUS_LABELS["DRAFT"]) ET imbriqué (STATUS_LABELS.SHIPMENT["DRAFT"]).
+export const STATUS_LABELS = { ...PACKAGE, ...SHIPMENT, ...PAYMENT, PACKAGE, SHIPMENT, PAYMENT };
 
 const STATUS_STYLES = {
   amber:
@@ -30,20 +57,39 @@ const STATUS_STYLES = {
 };
 
 const STATUS_COLOR = {
-  created: "slate",
-  pending: "amber",
-  received: "sky",
-  weighed: "sky",
-  ready: "amber",
-  paid: "emerald",
-  in_transit: "sky",
-  customs: "violet",
-  delivered: "emerald",
-  cancelled: "red",
+  // Colis
+  EXPECTED: "amber",
+  UNIDENTIFIED: "red",
+  RECEIVED: "sky",
+  INSPECTED: "sky",
+  STORED: "violet",
+  READY_TO_SHIP: "amber",
+  DAMAGED: "red",
+  REFUSED: "red",
+  RETURNED: "slate",
+  // Expéditions
+  DRAFT: "slate",
+  AWAITING_PAYMENT: "amber",
+  PREPARING: "violet",
+  IN_TRANSIT: "sky",
+  OUT_FOR_DELIVERY: "sky",
+  INCIDENT: "red",
+  // Communs
+  SHIPPED: "sky",
+  ARRIVED_BENIN: "violet",
+  DELIVERED: "emerald",
+  PAID: "emerald",
+  // Paiements
+  PENDING: "amber",
+  AUTHORIZED: "sky",
+  FAILED: "red",
+  REFUNDED: "slate",
+  CANCELLED: "slate",
 };
 
 export function StatusBadge({ status, className }) {
-  const label = STATUS_LABELS[status] || status;
+  const raw = STATUS_LABELS[status];
+  const label = typeof raw === "string" ? raw : status;
   const color = STATUS_COLOR[status] || "slate";
   return (
     <span
