@@ -77,6 +77,9 @@ Marque retenue : **Baobab Cargo** (nom court « Baobab »).
 - Service worker : handlers `push` (showNotification) + `notificationclick` (focus/openWindow). Cache bumpé v2.
 - Frontend : util `lib/push.js` + bascule « Notifications push » dans le profil client (opt-in par appareil). Détection de support + SW actif ; message d'aide si l'app n'est pas installée. ⚠️ Le SW n'est enregistré qu'en **production/PWA installée** (protège le hot reload) → le push fonctionne sur l'app déployée, et sur iPhone uniquement une fois « Ajouté à l'écran d'accueil » (iOS 16.4+). Backend testé (curl + envoi simulé) ; livraison E2E à valider sur appareil réel après déploiement.
 
+## Fait — Page d'accueil enrichie (2026-06)
+- Landing refondue et illustrée (charte respectée) : hero + badge de suivi, bandeau de chiffres (2–3 j, parité 655,957, temps réel, EUR & FCFA), grille « Pourquoi Baobab Cargo » (4 atouts), « Comment ça marche » (3 étapes), 3 sections image/texte (consolidation, réception & pesée, suivi mobile), tarifs indicatifs, témoignage, FAQ (accordéon), CTA et footer enrichi. Images réelles (Unsplash/Pexels) pertinentes. Vérifié à l'écran.
+
 ## Backlog priorisé (prochains prompts, ne pas anticiper)
 - **P1** : Paiement réel Mobile Money **KkiaPay** (MTN/Moov + carte, sandbox puis prod) — remplacer `SimulationProvider`.
 - **P1** : Relance automatique de devis impayé après 48 h (tâche planifiée quotidienne).
