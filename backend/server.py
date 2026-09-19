@@ -2,6 +2,7 @@ import os
 import asyncio
 import logging
 import secrets
+import base64
 from decimal import Decimal
 from datetime import timezone, timedelta
 from urllib.parse import urlencode
@@ -9,7 +10,7 @@ from urllib.parse import urlencode
 import requests
 import jwt
 from jwt import PyJWKClient
-from fastapi import FastAPI, APIRouter, Depends, HTTPException, Request, Response
+from fastapi import FastAPI, APIRouter, Depends, HTTPException, Request, Response, UploadFile, File, Form, Query
 from fastapi.responses import RedirectResponse
 from starlette.middleware.cors import CORSMiddleware
 
@@ -19,7 +20,7 @@ from models import (
     RegisterIn, LoginIn, GoogleSessionIn, ProfileUpdate, AddressIn,
     CountryIn, HubIn, CarrierIn, ZoneIn, TariffIn, SettingIn,
     PackageIn, WeighIn, PackageItemIn, TransitionIn, ShipmentIn, TrackingIn,
-    PaymentIn, CostIn, ForgotIn, ResetIn,
+    PaymentIn, CostIn, ForgotIn, ResetIn, DeclareIn, ReceiveIn, AttachIn,
 )
 from security import (
     verify_password, hash_password, create_access_token, get_current_user, require_roles,
@@ -443,7 +444,50 @@ async def my_package_photos(pid: str, user=Depends(get_current_user)):
     pkg = await db.packages.find_one({"_id": oid(pid)})
     if not pkg or not await owns_or_staff(user, pkg.get("user_id")):
         raise HTTPException(status_code=404, detail="Colis introuvable")
-    return serialize(await db.package_photos.find({"package_id": pid}).to_list(100))
+    docs = await db.package_photos.find({"package_id": pid}).to_list(100)
+    return [{"id": str(d["_id"]), "url": f"data:{d.get('content_type', 'image/jpeg')};base64,{d['data']}"} for d in docs]
+
+
+@api.get("/me/packages/{pid}/history")
+async def my_package_history(pid: str, user=Depends(get_current_user)):
+    pkg = await db.packages.find_one({"_id": oid(pid)})
+    if not pkg or not await owns_or_staff(user, pkg.get("user_id")):
+        raise HTTPException(status_code=404, detail="Colis introuvable")
+    return serialize(await db.status_history.find({"entity_type": "PACKAGE", "entity_id": pid}).sort("created_at", 1).to_list(200))
+
+
+@api.get("/me/packages/{pid}/items")
+async def my_package_items(pid: str, user=Depends(get_current_user)):
+    pkg = await db.packages.find_one({"_id": oid(pid)})
+    if not pkg or not await owns_or_staff(user, pkg.get("user_id")):
+        raise HTTPException(status_code=404, detail="Colis introuvable")
+    return serialize(await db.package_items.find({"package_id": pid}).to_list(200))
+
+
+@api.post("/me/packages/declare")
+async def declare_package(body: DeclareIn, user=Depends(get_current_user)):
+    fwd = await db.forwarding_addresses.find_one({"user_id": user["id"]})
+    ref = await gen_reference("PKG", db.packages)
+    doc = {
+        "reference": ref, "user_id": user["id"],
+        "forwarding_address_id": str(fwd["_id"]) if fwd else None,
+        "hub_id": fwd["hub_id"] if fwd else None,
+        "merchant_name": body.merchant_name, "tracking_in": body.tracking_in,
+        "weight_kg": None, "length_cm": None, "width_cm": None, "height_cm": None,
+        "volumetric_weight_kg": None, "billable_weight_kg": None,
+        "declared_value": to_money(body.declared_value) if body.declared_value is not None else None,
+        "content_category": body.content_category, "storage_location": None,
+        "status": "EXPECTED", "received_at": None, "notes": None, "created_at": now_utc(),
+    }
+    res = await db.packages.insert_one(doc)
+    pid = str(res.inserted_id)
+    await db.status_history.insert_one({"entity_type": "PACKAGE", "entity_id": pid, "from_status": None, "to_status": "EXPECTED", "actor_id": user["id"], "reason": "Déclaration client", "created_at": now_utc()})
+    for it in body.items:
+        d = it.model_dump()
+        d["declared_unit_value"] = to_money(d["declared_unit_value"])
+        d.update({"package_id": pid, "created_at": now_utc()})
+        await db.package_items.insert_one(d)
+    return serialize(await db.packages.find_one({"_id": res.inserted_id}))
 
 
 @api.get("/me/shipments")
@@ -514,8 +558,18 @@ async def admin_clients(user=Depends(require_roles("ADMIN", "OPERATOR"))):
 
 # ============ ADMIN/OPERATOR : colis + photos ============
 @api.get("/admin/packages")
-async def admin_list_packages(user=Depends(require_roles("ADMIN", "OPERATOR"))):
-    return serialize(await db.packages.find().sort("created_at", -1).to_list(500))
+async def admin_list_packages(status: str = None, customer_reference: str = None, hub_id: str = None, unidentified: bool = False, user=Depends(require_roles("ADMIN", "OPERATOR"))):
+    q = {}
+    if unidentified:
+        q["status"] = "UNIDENTIFIED"
+    elif status:
+        q["status"] = status
+    if hub_id:
+        q["hub_id"] = hub_id
+    if customer_reference:
+        fwd = await db.forwarding_addresses.find_one({"customer_reference": customer_reference.strip().upper()})
+        q["user_id"] = fwd["user_id"] if fwd else "__none__"
+    return serialize(await db.packages.find(q).sort("created_at", -1).to_list(500))
 
 
 @api.post("/admin/packages")
@@ -588,6 +642,135 @@ async def admin_add_item(pid: str, body: PackageItemIn, user=Depends(require_rol
 async def admin_pkg_transition(pid: str, body: TransitionIn, user=Depends(require_roles("ADMIN", "OPERATOR"))):
     await transition_status("PACKAGE", pid, body.to_status, user["id"], body.reason)
     return serialize(await db.packages.find_one({"_id": oid(pid)}))
+
+
+@api.get("/admin/packages/{pid}")
+async def admin_package_detail(pid: str, user=Depends(require_roles("ADMIN", "OPERATOR"))):
+    doc = await db.packages.find_one({"_id": oid(pid)})
+    if not doc:
+        raise HTTPException(status_code=404, detail="Colis introuvable")
+    out = serialize(doc)
+    if doc.get("user_id"):
+        prof = await db.profiles.find_one({"_id": oid(doc["user_id"])})
+        out["client"] = serialize(prof) if prof else None
+        fwd = await db.forwarding_addresses.find_one({"user_id": doc["user_id"]})
+        out["customer_reference"] = fwd["customer_reference"] if fwd else None
+    out["items"] = serialize(await db.package_items.find({"package_id": pid}).to_list(200))
+    out["history"] = serialize(await db.status_history.find({"entity_type": "PACKAGE", "entity_id": pid}).sort("created_at", 1).to_list(200))
+    photos = await db.package_photos.find({"package_id": pid}).to_list(100)
+    out["photos"] = [{"id": str(p["_id"]), "url": f"data:{p.get('content_type', 'image/jpeg')};base64,{p['data']}"} for p in photos]
+    return out
+
+
+@api.get("/admin/expected")
+async def admin_expected_for_ref(customer_reference: str, user=Depends(require_roles("ADMIN", "OPERATOR"))):
+    fwd = await db.forwarding_addresses.find_one({"customer_reference": customer_reference.strip().upper()})
+    if not fwd:
+        return []
+    return serialize(await db.packages.find({"user_id": fwd["user_id"], "status": "EXPECTED"}).to_list(50))
+
+
+def _weigh(divisor, weight, L, W, H):
+    vol = (L * W * H) / Decimal(divisor)
+    return vol, max(weight, vol)
+
+
+@api.post("/admin/packages/receive")
+async def admin_receive(body: ReceiveIn, user=Depends(require_roles("ADMIN", "OPERATOR"))):
+    user_id = None
+    fwd_id = None
+    hub_id = body.hub_id
+    if body.customer_reference:
+        fwd = await db.forwarding_addresses.find_one({"customer_reference": body.customer_reference.strip().upper()})
+        if not fwd:
+            raise HTTPException(status_code=404, detail="Référence client introuvable")
+        user_id = fwd["user_id"]
+        fwd_id = str(fwd["_id"])
+        hub_id = hub_id or fwd.get("hub_id")
+
+    weigh_set = None not in (body.weight_kg, body.length_cm, body.width_cm, body.height_cm)
+    vol = billable = None
+    if weigh_set:
+        divisor = int(await get_setting("volumetric_divisor", 5000))
+        vol, billable = _weigh(divisor, to_decimal(body.weight_kg), to_decimal(body.length_cm), to_decimal(body.width_cm), to_decimal(body.height_cm))
+    wf = {
+        "weight_kg": to_money(body.weight_kg) if body.weight_kg is not None else None,
+        "length_cm": to_money(body.length_cm) if body.length_cm is not None else None,
+        "width_cm": to_money(body.width_cm) if body.width_cm is not None else None,
+        "height_cm": to_money(body.height_cm) if body.height_cm is not None else None,
+        "volumetric_weight_kg": to_money(vol) if vol is not None else None,
+        "billable_weight_kg": to_money(billable) if billable is not None else None,
+    }
+
+    if body.expected_package_id:
+        pkg = await db.packages.find_one({"_id": oid(body.expected_package_id)})
+        if not pkg or pkg.get("status") != "EXPECTED":
+            raise HTTPException(status_code=400, detail="Colis attendu invalide")
+        pid = body.expected_package_id
+        upd = {**wf, "received_at": now_utc(), "storage_location": body.storage_location, "updated_at": now_utc()}
+        if body.merchant_name:
+            upd["merchant_name"] = body.merchant_name
+        if body.tracking_in:
+            upd["tracking_in"] = body.tracking_in
+        if body.declared_value is not None:
+            upd["declared_value"] = to_money(body.declared_value)
+        if body.content_category:
+            upd["content_category"] = body.content_category
+        if user_id:
+            upd.update({"user_id": user_id, "forwarding_address_id": fwd_id, "hub_id": hub_id})
+        await db.packages.update_one({"_id": oid(pid)}, {"$set": upd})
+        await write_audit(user["id"], "PACKAGE_RECEIVE", "PACKAGE", pid, {"status": "EXPECTED"}, wf)
+        await transition_status("PACKAGE", pid, "RECEIVED", user["id"], "Réception")
+    else:
+        status = "RECEIVED" if user_id else "UNIDENTIFIED"
+        ref = await gen_reference("PKG", db.packages)
+        doc = {
+            "reference": ref, "user_id": user_id, "forwarding_address_id": fwd_id, "hub_id": hub_id,
+            "merchant_name": body.merchant_name, "tracking_in": body.tracking_in, **wf,
+            "declared_value": to_money(body.declared_value) if body.declared_value is not None else None,
+            "content_category": body.content_category, "storage_location": body.storage_location,
+            "status": status, "received_at": now_utc(), "notes": body.notes, "created_at": now_utc(),
+        }
+        res = await db.packages.insert_one(doc)
+        pid = str(res.inserted_id)
+        await db.status_history.insert_one({"entity_type": "PACKAGE", "entity_id": pid, "from_status": None, "to_status": status, "actor_id": user["id"], "reason": "Réception", "created_at": now_utc()})
+
+    pkg = await db.packages.find_one({"_id": oid(pid)})
+    if pkg.get("user_id") and body.auto_store and pkg.get("status") == "RECEIVED":
+        await transition_status("PACKAGE", pid, "INSPECTED", user["id"], "Inspection")
+        await transition_status("PACKAGE", pid, "STORED", user["id"], "Mise en stock")
+    return serialize(await db.packages.find_one({"_id": oid(pid)}))
+
+
+@api.post("/admin/packages/{pid}/attach")
+async def admin_attach(pid: str, body: AttachIn, user=Depends(require_roles("ADMIN", "OPERATOR"))):
+    pkg = await db.packages.find_one({"_id": oid(pid)})
+    if not pkg:
+        raise HTTPException(status_code=404, detail="Colis introuvable")
+    if pkg.get("status") != "UNIDENTIFIED":
+        raise HTTPException(status_code=409, detail="Ce colis n'est pas à identifier")
+    fwd = await db.forwarding_addresses.find_one({"customer_reference": body.customer_reference.strip().upper()})
+    if not fwd:
+        raise HTTPException(status_code=404, detail="Référence client introuvable")
+    await db.packages.update_one({"_id": oid(pid)}, {"$set": {"user_id": fwd["user_id"], "forwarding_address_id": str(fwd["_id"]), "hub_id": pkg.get("hub_id") or fwd.get("hub_id"), "updated_at": now_utc()}})
+    await write_audit(user["id"], "PACKAGE_ATTACH", "PACKAGE", pid, {"user_id": None}, {"user_id": fwd["user_id"]})
+    await transition_status("PACKAGE", pid, "RECEIVED", user["id"], "Rattachement client")
+    return serialize(await db.packages.find_one({"_id": oid(pid)}))
+
+
+@api.post("/admin/packages/{pid}/photos")
+async def admin_upload_photo(pid: str, file: UploadFile = File(...), user=Depends(require_roles("ADMIN", "OPERATOR"))):
+    if not await db.packages.find_one({"_id": oid(pid)}):
+        raise HTTPException(status_code=404, detail="Colis introuvable")
+    data = await file.read()
+    if len(data) > 5 * 1024 * 1024:
+        raise HTTPException(status_code=413, detail="Photo trop lourde (max 5 Mo)")
+    await db.package_photos.insert_one({
+        "package_id": pid, "data": base64.b64encode(data).decode(),
+        "content_type": file.content_type or "image/jpeg",
+        "storage_path": f"packages/{pid}/{secrets.token_hex(8)}", "created_at": now_utc(),
+    })
+    return {"ok": True}
 
 
 # ============ ADMIN : expéditions ============

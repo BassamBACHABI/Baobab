@@ -25,6 +25,11 @@ Marque retenue : **Baobab Cargo** (nom court « Baobab »).
 - Bleu profond #0B2046, accent terracotta #E56B3D, Plus Jakarta Sans, coins arrondis, espace blanc, mode clair/sombre.
 - Composants : boutons, cartes, badges de statut (StatusBadge, libellés FR), tableaux responsives, formulaires, toasts (sonner), squelettes (ListSkeleton), états vides (EmptyState), PageHeader.
 
+## Fait — Prompts 4 & 5 (2026-06 — Espace client colis + Back-office réception)
+- Client : Accueil (adresse de réception + référence + bouton Copier + guide 3 étapes + compteurs en attente/reçus/prêts + montants EUR/XOF), Mes colis (chips de statut défilants + recherche, tableau desktop / cartes mobile), détail colis (photos, poids réel/volumétrique/facturable, dimensions, valeur, contenu, frise status_history), Déclarer un colis attendu (EXPECTED via serveur + status_history).
+- Back-office (ADMIN/OPERATOR, responsive) : « Réceptionner un colis » (réf client ou non identifié, marchand, suivi, poids+dimensions, emplacement, contenu, valeur) ; **calcul serveur** poids volumétrique = L×l×H/diviseur, facturable = max(réel, vol) ; identifié → RECEIVED→INSPECTED→STORED auto ; sans client → UNIDENTIFIED (ne peut pas atteindre STORED sans rattachement) ; onglet « Colis à identifier » + rattachement ; conversion d'un EXPECTED en réception ; photos privées (base64, servies gated). Toutes transitions via la fonction serveur (status_history).
+- Vérifié via curl + captures (client & admin). ⚠️ Photos stockées en base64 dans Mongo (MVP) — migrer vers object storage plus tard.
+
 ## Fait — Prompt 3 (2026-06 — Auth, rôles & profil)
 - Mot de passe oublié/réinitialisation (tokens à usage unique, TTL 1h ; lien loggé côté serveur — e-mail à câbler plus tard).
 - **Sign in with Apple (web)** : /auth/apple/start + /auth/apple/callback (form_post), vérification serveur du jeton (JWKS RS256, aud=Service ID, iss, exp, nonce). Nécessite `APPLE_CLIENT_ID` + Return URL enregistrée ; 503 tant que non configuré.

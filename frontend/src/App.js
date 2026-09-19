@@ -18,6 +18,7 @@ import AppleReturn from "@/pages/AppleReturn";
 import NotFound from "@/pages/NotFound";
 import ClientHome from "@/pages/client/ClientHome";
 import ClientParcels from "@/pages/client/ClientParcels";
+import ClientPackageDetail from "@/pages/client/ClientPackageDetail";
 import ClientShipments from "@/pages/client/ClientShipments";
 import ClientProfile from "@/pages/client/ClientProfile";
 import AdminDashboard from "@/pages/admin/AdminDashboard";
@@ -44,6 +45,7 @@ function AppRoutes() {
         <Route path="/client" element={<ClientLayout />}>
           <Route index element={<ClientHome />} />
           <Route path="parcels" element={<ClientParcels />} />
+          <Route path="parcels/:id" element={<ClientPackageDetail />} />
           <Route path="shipments" element={<ClientShipments />} />
           <Route path="profile" element={<ClientProfile />} />
         </Route>

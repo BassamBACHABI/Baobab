@@ -168,3 +168,32 @@ class CostIn(BaseModel):
     amount: Decimal
     currency: str = "EUR"
     notes: Optional[str] = None
+
+
+class DeclareIn(BaseModel):
+    merchant_name: str
+    tracking_in: Optional[str] = None
+    content_category: Optional[str] = None
+    declared_value: Optional[Decimal] = None
+    items: List[PackageItemIn] = []
+
+
+class ReceiveIn(BaseModel):
+    customer_reference: Optional[str] = None
+    expected_package_id: Optional[str] = None
+    hub_id: Optional[str] = None
+    merchant_name: Optional[str] = None
+    tracking_in: Optional[str] = None
+    declared_value: Optional[Decimal] = None
+    content_category: Optional[str] = None
+    storage_location: Optional[str] = None
+    notes: Optional[str] = None
+    weight_kg: Optional[Decimal] = None
+    length_cm: Optional[Decimal] = None
+    width_cm: Optional[Decimal] = None
+    height_cm: Optional[Decimal] = None
+    auto_store: bool = True
+
+
+class AttachIn(BaseModel):
+    customer_reference: str
