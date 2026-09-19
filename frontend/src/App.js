@@ -20,11 +20,14 @@ import ClientHome from "@/pages/client/ClientHome";
 import ClientParcels from "@/pages/client/ClientParcels";
 import ClientPackageDetail from "@/pages/client/ClientPackageDetail";
 import ClientShipments from "@/pages/client/ClientShipments";
+import ClientShipmentNew from "@/pages/client/ClientShipmentNew";
+import ClientShipmentDetail from "@/pages/client/ClientShipmentDetail";
 import ClientProfile from "@/pages/client/ClientProfile";
 import AdminDashboard from "@/pages/admin/AdminDashboard";
 import AdminClients from "@/pages/admin/AdminClients";
 import AdminParcels from "@/pages/admin/AdminParcels";
 import AdminShipments from "@/pages/admin/AdminShipments";
+import AdminShipmentDetail from "@/pages/admin/AdminShipmentDetail";
 import AdminSettings from "@/pages/admin/AdminSettings";
 
 function AppRoutes() {
@@ -47,6 +50,8 @@ function AppRoutes() {
           <Route path="parcels" element={<ClientParcels />} />
           <Route path="parcels/:id" element={<ClientPackageDetail />} />
           <Route path="shipments" element={<ClientShipments />} />
+          <Route path="shipments/new" element={<ClientShipmentNew />} />
+          <Route path="shipments/:id" element={<ClientShipmentDetail />} />
           <Route path="profile" element={<ClientProfile />} />
         </Route>
       </Route>
@@ -57,6 +62,7 @@ function AppRoutes() {
           <Route path="clients" element={<AdminClients />} />
           <Route path="parcels" element={<AdminParcels />} />
           <Route path="shipments" element={<AdminShipments />} />
+          <Route path="shipments/:id" element={<AdminShipmentDetail />} />
           <Route path="settings" element={<AdminSettings />} />
         </Route>
       </Route>

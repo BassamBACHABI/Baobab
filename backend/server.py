@@ -21,6 +21,7 @@ from models import (
     CountryIn, HubIn, CarrierIn, ZoneIn, TariffIn, SettingIn,
     PackageIn, WeighIn, PackageItemIn, TransitionIn, ShipmentIn, TrackingIn,
     PaymentIn, CostIn, ForgotIn, ResetIn, DeclareIn, ReceiveIn, AttachIn,
+    QuoteIn, ShipmentUpdateIn, WebhookIn, SimulateIn,
 )
 from security import (
     verify_password, hash_password, create_access_token, get_current_user, require_roles,
@@ -31,7 +32,12 @@ from statemachine import (
     transition_status, write_audit, STATUS_LABELS,
     PACKAGE_TRANSITIONS, SHIPMENT_TRANSITIONS, PAYMENT_TRANSITIONS,
 )
+from payments_provider import provider as pay_provider
 from seed import run_seed
+
+
+def _q2(x):
+    return str(Decimal(str(x)).quantize(Decimal("0.01")))
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("baobab")
@@ -511,6 +517,141 @@ async def my_tracking(sid: str, user=Depends(get_current_user)):
     return serialize(await db.tracking_events.find({"shipment_id": sid}).sort("occurred_at", 1).to_list(200))
 
 
+async def compute_quote(package_ids, delivery_zone_id, transport_mode, user):
+    if not package_ids:
+        raise HTTPException(status_code=400, detail="Sélectionnez au moins un colis")
+    pkgs = []
+    for pid in package_ids:
+        p = await db.packages.find_one({"_id": oid(pid)})
+        if not p or p.get("user_id") != user["id"]:
+            raise HTTPException(status_code=404, detail="Colis introuvable")
+        if p.get("status") != "STORED":
+            raise HTTPException(status_code=409, detail=f"Le colis {p['reference']} n'est pas au statut STOCKÉ")
+        async for l in db.shipment_packages.find({"package_id": pid}):
+            s = await db.shipments.find_one({"_id": oid(l["shipment_id"])})
+            if s and s.get("status") != "DELIVERED":
+                raise HTTPException(status_code=409, detail=f"Le colis {p['reference']} est déjà dans une expédition")
+        pkgs.append(p)
+    users = {p.get("user_id") for p in pkgs}
+    if len(users) > 1:
+        raise HTTPException(status_code=409, detail="Une expédition ne regroupe que des colis d'un même client")
+    total_bill = sum((to_decimal(p.get("billable_weight_kg")) or Decimal("0") for p in pkgs), Decimal("0"))
+    zone = await db.delivery_zones.find_one({"_id": oid(delivery_zone_id)})
+    if not zone:
+        raise HTTPException(status_code=404, detail="Zone de livraison introuvable")
+    hub_id = pkgs[0].get("hub_id")
+    hub = await db.logistic_hubs.find_one({"_id": oid(hub_id)}) if hub_id else None
+    q = {"destination_country_code": "BJ", "service_type": "FREIGHT_FORWARDING", "transport_mode": transport_mode, "active": True}
+    if hub and hub.get("country_id"):
+        q["origin_country_id"] = hub["country_id"]
+    tariff = None
+    for t in await db.tariffs.find(q).to_list(100):
+        if to_decimal(t["min_weight_kg"]) <= total_bill <= to_decimal(t["max_weight_kg"]):
+            tariff = t
+            break
+    if not tariff:
+        raise HTTPException(status_code=409, detail="Aucun tarif ne correspond au poids facturable")
+    rate = to_decimal(await get_setting("eur_xof_rate", 655.957))
+    divisor = int(await get_setting("volumetric_divisor", 5000))
+    transport_eur = to_decimal(tariff["fixed_fee"]) + to_decimal(tariff["price_per_kg"]) * total_bill
+    delivery_xof = to_decimal(zone["fee_xof"])
+    delivery_eur = delivery_xof / rate
+    total_eur = transport_eur + delivery_eur
+    total_xof = total_eur * rate
+    snap = {
+        "tariff_id": str(tariff["_id"]), "price_per_kg": str(tariff["price_per_kg"]),
+        "fixed_fee": str(tariff["fixed_fee"]), "eur_xof_rate": str(rate), "volumetric_divisor": divisor,
+        "transport_mode": transport_mode, "total_billable_weight_kg": _q2(total_bill),
+        "transport_eur": _q2(transport_eur), "delivery_fee_xof": _q2(delivery_xof),
+        "delivery_fee_eur": _q2(delivery_eur), "total_eur": _q2(total_eur), "total_xof": _q2(total_xof),
+        "zone_id": str(zone["_id"]), "zone_name": zone["name"], "zone_city": zone["city"],
+    }
+    return pkgs, zone, snap, total_bill, total_eur, total_xof
+
+
+@api.post("/me/shipments/quote")
+async def shipment_quote(body: QuoteIn, user=Depends(get_current_user)):
+    _, _, snap, _, _, _ = await compute_quote(body.package_ids, body.delivery_zone_id, body.transport_mode, user)
+    return snap
+
+
+@api.post("/me/shipments")
+async def create_shipment(body: QuoteIn, user=Depends(get_current_user)):
+    pkgs, zone, snap, total_bill, total_eur, total_xof = await compute_quote(body.package_ids, body.delivery_zone_id, body.transport_mode, user)
+    ref = await gen_reference("SHP", db.shipments)
+    doc = {
+        "reference": ref, "user_id": user["id"], "origin_hub_id": pkgs[0].get("hub_id"),
+        "destination_country_code": "BJ", "destination_city": zone["city"],
+        "delivery_zone_id": body.delivery_zone_id, "delivery_mode": body.delivery_mode,
+        "carrier_id": None, "transport_mode": body.transport_mode,
+        "total_billable_weight_kg": to_money(total_bill), "cost_eur": to_money(total_eur),
+        "cost_xof": to_money(total_xof), "tariff_snapshot": snap, "tracking_number": None,
+        "status": "DRAFT", "created_at": now_utc(),
+    }
+    res = await db.shipments.insert_one(doc)
+    sid = str(res.inserted_id)
+    for pid in body.package_ids:
+        await db.shipment_packages.insert_one({"shipment_id": sid, "package_id": pid})
+    await db.status_history.insert_one({"entity_type": "SHIPMENT", "entity_id": sid, "from_status": None, "to_status": "DRAFT", "actor_id": user["id"], "reason": "Création", "created_at": now_utc()})
+    await write_audit(user["id"], "SHIPMENT_CREATE", "SHIPMENT", sid, None, snap)
+    await transition_status("SHIPMENT", sid, "AWAITING_PAYMENT", user["id"], "Devis validé")
+    return serialize(await db.shipments.find_one({"_id": res.inserted_id}))
+
+
+@api.post("/me/shipments/{sid}/pay")
+async def start_payment(sid: str, user=Depends(get_current_user)):
+    ship = await db.shipments.find_one({"_id": oid(sid)})
+    if not ship or ship.get("user_id") != user["id"]:
+        raise HTTPException(status_code=404, detail="Expédition introuvable")
+    existing = await db.payments.find_one({"shipment_id": sid, "status": {"$in": ["PENDING", "AUTHORIZED", "PAID"]}})
+    if existing:
+        return serialize(existing)
+    doc = {
+        "user_id": user["id"], "shipment_id": sid, "order_id": None, "provider": pay_provider.name,
+        "transaction_reference": None, "amount": ship.get("cost_xof"), "currency": "XOF",
+        "status": "PENDING", "paid_at": None, "created_at": now_utc(),
+    }
+    res = await db.payments.insert_one(doc)
+    checkout = pay_provider.initiate(str(res.inserted_id), _q2(to_decimal(ship.get("cost_xof")) or 0), "XOF")
+    await db.payments.update_one({"_id": res.inserted_id}, {"$set": {"transaction_reference": checkout["checkout_ref"]}})
+    return serialize(await db.payments.find_one({"_id": res.inserted_id}))
+
+
+async def _process_payment(payment_id, result, actor):
+    p = await db.payments.find_one({"_id": oid(payment_id)})
+    if not p:
+        raise HTTPException(status_code=404, detail="Paiement introuvable")
+    if p["status"] in ("PAID", "FAILED", "REFUNDED", "CANCELLED"):
+        return {"status": p["status"], "idempotent": True}
+    if result == "success":
+        await transition_status("PAYMENT", payment_id, "PAID", actor, "Confirmation prestataire")
+        await db.payments.update_one({"_id": oid(payment_id)}, {"$set": {"paid_at": now_utc()}})
+        sid = p.get("shipment_id")
+        if sid:
+            s = await db.shipments.find_one({"_id": oid(sid)})
+            if s and s.get("status") == "AWAITING_PAYMENT":
+                await transition_status("SHIPMENT", sid, "PAID", actor, "Paiement confirmé")
+        return {"status": "PAID"}
+    await transition_status("PAYMENT", payment_id, "FAILED", actor, "Échec du paiement")
+    return {"status": "FAILED"}
+
+
+@api.post("/payments/webhook")
+async def payment_webhook(body: WebhookIn, request: Request):
+    if not pay_provider.verify_webhook(request.headers.get("X-Webhook-Secret", "")):
+        raise HTTPException(status_code=401, detail="Signature de webhook invalide")
+    return await _process_payment(body.payment_id, body.result, "system")
+
+
+@api.post("/me/payments/{pid}/simulate")
+async def simulate_payment(pid: str, body: SimulateIn, user=Depends(get_current_user)):
+    p = await db.payments.find_one({"_id": oid(pid)})
+    if not p or p.get("user_id") != user["id"]:
+        raise HTTPException(status_code=404, detail="Paiement introuvable")
+    # Le navigateur déclenche la simulation ; la confirmation est traitée côté serveur (jamais PAID par le client).
+    return await _process_payment(pid, body.result, "system")
+
+
 @api.get("/me/payments")
 async def my_payments(user=Depends(get_current_user)):
     return serialize(await db.payments.find({"user_id": user["id"]}).sort("created_at", -1).to_list(200))
@@ -814,9 +955,70 @@ async def admin_create_shipment(body: ShipmentIn, user=Depends(require_roles("AD
     return serialize(await db.shipments.find_one({"_id": res.inserted_id}))
 
 
+@api.get("/admin/shipments/{sid}")
+async def admin_shipment_detail(sid: str, user=Depends(require_roles("ADMIN"))):
+    ship = await db.shipments.find_one({"_id": oid(sid)})
+    if not ship:
+        raise HTTPException(status_code=404, detail="Expédition introuvable")
+    out = serialize(ship)
+    links = [l["package_id"] async for l in db.shipment_packages.find({"shipment_id": sid})]
+    pkgs = []
+    for pid in links:
+        p = await db.packages.find_one({"_id": oid(pid)})
+        if p:
+            pkgs.append(serialize(p))
+    out["packages"] = pkgs
+    if ship.get("user_id"):
+        prof = await db.profiles.find_one({"_id": oid(ship["user_id"])})
+        out["client"] = serialize(prof) if prof else None
+    out["payments"] = serialize(await db.payments.find({"shipment_id": sid}).to_list(50))
+    out["costs"] = serialize(await db.cost_records.find({"shipment_id": sid}).to_list(50))
+    out["tracking"] = serialize(await db.tracking_events.find({"shipment_id": sid}).sort("occurred_at", 1).to_list(200))
+    out["history"] = serialize(await db.status_history.find({"entity_type": "SHIPMENT", "entity_id": sid}).sort("created_at", 1).to_list(200))
+    return out
+
+
+@api.put("/admin/shipments/{sid}")
+async def admin_update_shipment(sid: str, body: ShipmentUpdateIn, user=Depends(require_roles("ADMIN"))):
+    changes = {k: v for k, v in body.model_dump().items() if v is not None}
+    if changes:
+        await db.shipments.update_one({"_id": oid(sid)}, {"$set": {**changes, "updated_at": now_utc()}})
+    return serialize(await db.shipments.find_one({"_id": oid(sid)}))
+
+
+async def _try_pkg(pid, target, actor):
+    try:
+        await transition_status("PACKAGE", pid, target, actor, "Suivi expédition")
+    except HTTPException:
+        pass
+
+
 @api.post("/admin/shipments/{sid}/transition")
 async def admin_ship_transition(sid: str, body: TransitionIn, user=Depends(require_roles("ADMIN"))):
+    ship = await db.shipments.find_one({"_id": oid(sid)})
+    if not ship:
+        raise HTTPException(status_code=404, detail="Expédition introuvable")
+    if body.to_status == "PREPARING":
+        paid = await db.payments.find_one({"shipment_id": sid, "status": "PAID"})
+        if not paid:
+            raise HTTPException(status_code=409, detail="Un paiement PAID est requis avant la préparation")
     await transition_status("SHIPMENT", sid, body.to_status, user["id"], body.reason)
+    await db.tracking_events.insert_one({
+        "shipment_id": sid, "status": body.to_status, "location": None,
+        "message": STATUS_LABELS["SHIPMENT"].get(body.to_status, body.to_status),
+        "occurred_at": now_utc().isoformat(), "created_at": now_utc(),
+    })
+    links = [l["package_id"] async for l in db.shipment_packages.find({"shipment_id": sid})]
+    if body.to_status == "SHIPPED":
+        for pid in links:
+            await _try_pkg(pid, "READY_TO_SHIP", user["id"])
+            await _try_pkg(pid, "SHIPPED", user["id"])
+    elif body.to_status == "ARRIVED_BENIN":
+        for pid in links:
+            await _try_pkg(pid, "ARRIVED_BENIN", user["id"])
+    elif body.to_status == "DELIVERED":
+        for pid in links:
+            await _try_pkg(pid, "DELIVERED", user["id"])
     return serialize(await db.shipments.find_one({"_id": oid(sid)}))
 
 

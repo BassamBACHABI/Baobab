@@ -197,3 +197,25 @@ class ReceiveIn(BaseModel):
 
 class AttachIn(BaseModel):
     customer_reference: str
+
+
+class QuoteIn(BaseModel):
+    package_ids: List[str]
+    delivery_zone_id: str
+    delivery_mode: str = "PICKUP_POINT"
+    transport_mode: str = "AIR"
+
+
+class ShipmentUpdateIn(BaseModel):
+    carrier_id: Optional[str] = None
+    transport_mode: Optional[str] = None
+    tracking_number: Optional[str] = None
+
+
+class WebhookIn(BaseModel):
+    payment_id: str
+    result: str  # success | failure
+
+
+class SimulateIn(BaseModel):
+    result: str  # success | failure
