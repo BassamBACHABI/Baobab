@@ -38,6 +38,7 @@ async def create_indexes():
     await db.push_subscriptions.create_index("user_id")
     await db.proxy_orders.create_index("reference", unique=True)
     await db.proxy_orders.create_index("user_id")
+    await db.support_messages.create_index([("user_id", 1), ("created_at", 1)])
     await db.cost_records.create_index("shipment_id")
 
 

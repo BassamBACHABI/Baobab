@@ -1,11 +1,13 @@
 import { useEffect, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
-import { ArrowLeft, Loader2, Calculator, PackageCheck, Ban, ExternalLink } from "lucide-react";
+import { ArrowLeft, Loader2, Calculator, PackageCheck, Ban, ExternalLink, Scale } from "lucide-react";
 import { toast } from "sonner";
 import { api, apiError } from "@/lib/api";
 import { StatusBadge, STATUS_LABELS } from "@/components/common/StatusBadge";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 
 export default function AdminProxyDetail() {
   const { id } = useParams();
@@ -13,9 +15,16 @@ export default function AdminProxyDetail() {
   const [order, setOrder] = useState(null);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
+  const [weight, setWeight] = useState("");
+  const [photoData, setPhotoData] = useState(null);
 
   const load = async () => {
-    try { const { data } = await api.get(`/admin/proxy-orders/${id}`); setOrder(data); }
+    try {
+      const { data } = await api.get(`/admin/proxy-orders/${id}`);
+      setOrder(data);
+      setWeight(data.received_weight_kg || "");
+      setPhotoData(data.received_photo || null);
+    }
     catch { toast.error("Introuvable."); navigate("/admin/proxy"); } finally { setLoading(false); }
   };
   useEffect(() => { load(); }, [id]);
@@ -23,6 +32,12 @@ export default function AdminProxyDetail() {
   const act = async (fn, ok) => {
     setBusy(true);
     try { await fn(); toast.success(ok); await load(); }
+    catch (err) { toast.error(apiError(err.response?.data?.detail) || err.message); } finally { setBusy(false); }
+  };
+  const onPhoto = (e) => { const f = e.target.files?.[0]; if (!f) return; const r = new FileReader(); r.onload = () => setPhotoData(r.result); r.readAsDataURL(f); };
+  const saveHub = async () => {
+    setBusy(true);
+    try { await api.post(`/admin/proxy-orders/${id}/hub-details`, { weight_kg: Number(weight), photo: photoData || undefined }); toast.success("Poids & photo enregistrés"); await load(); }
     catch (err) { toast.error(apiError(err.response?.data?.detail) || err.message); } finally { setBusy(false); }
   };
 
@@ -88,6 +103,19 @@ export default function AdminProxyDetail() {
           )}
         </CardContent></Card>
       </div>
+
+      {["PAID", "RECEIVED"].includes(order.status) && (
+        <Card className="rounded-2xl border-border" data-testid="proxy-hub-form"><CardContent className="space-y-4 p-5">
+          <h3 className="text-sm font-semibold flex items-center gap-2"><Scale className="h-4 w-4 text-accent" /> Réception au hub (poids & photo)</h3>
+          <p className="text-xs text-muted-foreground">Ajoutez le poids et une photo de la commande reçue avant de la marquer « reçue ». Le client pourra ensuite valider l'expédition.</p>
+          <div className="flex flex-wrap items-end gap-3">
+            <div className="space-y-1"><Label className="text-xs">Poids reçu (kg)</Label><Input type="number" step="0.01" data-testid="hub-weight" value={weight} onChange={(e) => setWeight(e.target.value)} className="h-11 w-32 rounded-xl" /></div>
+            <div className="space-y-1"><Label className="text-xs">Photo</Label><Input type="file" accept="image/*" data-testid="hub-photo" onChange={onPhoto} className="h-11 rounded-xl" /></div>
+            <Button onClick={saveHub} disabled={busy || !weight} data-testid="save-hub-btn" className="h-11 rounded-xl bg-accent text-white hover:bg-[#D45A2C]">Enregistrer</Button>
+          </div>
+          {(photoData || order.received_photo) && <img src={photoData || order.received_photo} alt="Commande reçue" className="max-h-56 rounded-xl border border-border object-cover" />}
+        </CardContent></Card>
+      )}
 
       <Card className="rounded-2xl border-border"><CardContent className="p-5">
         <h3 className="mb-4 text-sm font-semibold">Suivi</h3>

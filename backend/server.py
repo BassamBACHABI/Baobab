@@ -23,6 +23,7 @@ from models import (
     PaymentIn, CostIn, ForgotIn, ResetIn, DeclareIn, ReceiveIn, AttachIn,
     QuoteIn, ShipmentUpdateIn, WebhookIn, SimulateIn, PrefIn,
     PushSubscribeIn, PushUnsubscribeIn, ProxyOrderIn, ProxyReceiveIn,
+    ProxyHubIn, ProxyShipIn, SupportMsgIn, TariffUpdateIn,
 )
 from security import (
     verify_password, hash_password, create_access_token, get_current_user, require_roles,
@@ -45,7 +46,7 @@ def _q2(x):
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("baobab")
 
-app = FastAPI(title="Baobab Cargo API")
+app = FastAPI(title="Baobab Transit API")
 api = APIRouter(prefix="/api")
 
 EMERGENT_SESSION_URL = "https://demobackend.emergentagent.com/auth/v1/env/oauth/session-data"
@@ -100,7 +101,7 @@ async def _client_contact(user_id):
 # ============ AUTH ============
 @api.get("/")
 async def root():
-    return {"service": "Baobab Cargo API", "status": "ok"}
+    return {"service": "Baobab Transit API", "status": "ok"}
 
 
 @api.post("/auth/register")
@@ -392,6 +393,45 @@ async def create_tariff(body: TariffIn, user=Depends(require_roles("ADMIN"))):
     return serialize(await db.tariffs.find_one({"_id": res.inserted_id}))
 
 
+@api.put("/tariffs/{tid}")
+async def update_tariff(tid: str, body: TariffUpdateIn, user=Depends(require_roles("ADMIN"))):
+    t = await db.tariffs.find_one({"_id": oid(tid)})
+    if not t:
+        raise HTTPException(status_code=404, detail="Tarif introuvable")
+    changes = {}
+    for f in ("price_per_kg", "fixed_fee", "min_weight_kg", "max_weight_kg"):
+        v = getattr(body, f)
+        if v is not None:
+            changes[f] = to_money(v)
+    if body.active is not None:
+        changes["active"] = body.active
+    if changes:
+        before = {k: t.get(k) for k in changes}
+        changes["updated_at"] = now_utc()
+        await db.tariffs.update_one({"_id": oid(tid)}, {"$set": changes})
+        await write_audit(user["id"], "TARIFF_UPDATE", "TARIFF", tid, before, changes)
+    return serialize(await db.tariffs.find_one({"_id": oid(tid)}))
+
+
+@api.delete("/tariffs/{tid}")
+async def delete_tariff(tid: str, user=Depends(require_roles("ADMIN"))):
+    t = await db.tariffs.find_one({"_id": oid(tid)})
+    if not t:
+        raise HTTPException(status_code=404, detail="Tarif introuvable")
+    await db.tariffs.delete_one({"_id": oid(tid)})
+    await write_audit(user["id"], "TARIFF_DELETE", "TARIFF", tid, serialize(t), None)
+    return {"ok": True}
+
+
+@api.get("/public/tariffs")
+async def public_tariffs():
+    docs = await db.tariffs.find({"destination_country_code": "BJ", "transport_mode": "AIR", "active": True}).to_list(100)
+    docs = serialize(docs)
+    docs.sort(key=lambda t: float(t.get("min_weight_kg") or 0))
+    return [{"min_weight_kg": t.get("min_weight_kg"), "max_weight_kg": t.get("max_weight_kg"),
+             "price_per_kg": t.get("price_per_kg"), "fixed_fee": t.get("fixed_fee")} for t in docs]
+
+
 @api.get("/settings")
 async def list_settings(user=Depends(get_current_user)):
     return serialize(await db.app_settings.find().to_list(100))
@@ -578,6 +618,35 @@ async def my_tracking(sid: str, user=Depends(get_current_user)):
     return serialize(await db.tracking_events.find({"shipment_id": sid}).sort("occurred_at", 1).to_list(200))
 
 
+async def _price_for_weight(total_bill, zone, transport_mode, origin_country_id=None):
+    q = {"destination_country_code": "BJ", "service_type": "FREIGHT_FORWARDING", "transport_mode": transport_mode, "active": True}
+    if origin_country_id:
+        q["origin_country_id"] = origin_country_id
+    tariff = None
+    for t in await db.tariffs.find(q).to_list(100):
+        if to_decimal(t["min_weight_kg"]) <= total_bill <= to_decimal(t["max_weight_kg"]):
+            tariff = t
+            break
+    if not tariff:
+        raise HTTPException(status_code=409, detail="Aucun tarif ne correspond au poids facturable")
+    rate = to_decimal(await get_setting("eur_xof_rate", 655.957))
+    divisor = int(await get_setting("volumetric_divisor", 5000))
+    transport_eur = to_decimal(tariff["fixed_fee"]) + to_decimal(tariff["price_per_kg"]) * total_bill
+    delivery_xof = to_decimal(zone["fee_xof"])
+    delivery_eur = delivery_xof / rate
+    total_eur = transport_eur + delivery_eur
+    total_xof = total_eur * rate
+    snap = {
+        "tariff_id": str(tariff["_id"]), "price_per_kg": str(tariff["price_per_kg"]),
+        "fixed_fee": str(tariff["fixed_fee"]), "eur_xof_rate": str(rate), "volumetric_divisor": divisor,
+        "transport_mode": transport_mode, "total_billable_weight_kg": _q2(total_bill),
+        "transport_eur": _q2(transport_eur), "delivery_fee_xof": _q2(delivery_xof),
+        "delivery_fee_eur": _q2(delivery_eur), "total_eur": _q2(total_eur), "total_xof": _q2(total_xof),
+        "zone_id": str(zone["_id"]), "zone_name": zone["name"], "zone_city": zone["city"],
+    }
+    return snap, total_eur, total_xof
+
+
 async def compute_quote(package_ids, delivery_zone_id, transport_mode, user):
     if not package_ids:
         raise HTTPException(status_code=400, detail="Sélectionnez au moins un colis")
@@ -602,31 +671,7 @@ async def compute_quote(package_ids, delivery_zone_id, transport_mode, user):
         raise HTTPException(status_code=404, detail="Zone de livraison introuvable")
     hub_id = pkgs[0].get("hub_id")
     hub = await db.logistic_hubs.find_one({"_id": oid(hub_id)}) if hub_id else None
-    q = {"destination_country_code": "BJ", "service_type": "FREIGHT_FORWARDING", "transport_mode": transport_mode, "active": True}
-    if hub and hub.get("country_id"):
-        q["origin_country_id"] = hub["country_id"]
-    tariff = None
-    for t in await db.tariffs.find(q).to_list(100):
-        if to_decimal(t["min_weight_kg"]) <= total_bill <= to_decimal(t["max_weight_kg"]):
-            tariff = t
-            break
-    if not tariff:
-        raise HTTPException(status_code=409, detail="Aucun tarif ne correspond au poids facturable")
-    rate = to_decimal(await get_setting("eur_xof_rate", 655.957))
-    divisor = int(await get_setting("volumetric_divisor", 5000))
-    transport_eur = to_decimal(tariff["fixed_fee"]) + to_decimal(tariff["price_per_kg"]) * total_bill
-    delivery_xof = to_decimal(zone["fee_xof"])
-    delivery_eur = delivery_xof / rate
-    total_eur = transport_eur + delivery_eur
-    total_xof = total_eur * rate
-    snap = {
-        "tariff_id": str(tariff["_id"]), "price_per_kg": str(tariff["price_per_kg"]),
-        "fixed_fee": str(tariff["fixed_fee"]), "eur_xof_rate": str(rate), "volumetric_divisor": divisor,
-        "transport_mode": transport_mode, "total_billable_weight_kg": _q2(total_bill),
-        "transport_eur": _q2(transport_eur), "delivery_fee_xof": _q2(delivery_xof),
-        "delivery_fee_eur": _q2(delivery_eur), "total_eur": _q2(total_eur), "total_xof": _q2(total_xof),
-        "zone_id": str(zone["_id"]), "zone_name": zone["name"], "zone_city": zone["city"],
-    }
+    snap, total_eur, total_xof = await _price_for_weight(total_bill, zone, transport_mode, hub.get("country_id") if hub else None)
     return pkgs, zone, snap, total_bill, total_eur, total_xof
 
 
@@ -821,6 +866,7 @@ async def create_proxy_order(body: ProxyOrderIn, user=Depends(get_current_user))
         "reference": ref, "user_id": user["id"], "items": items, "notes": body.notes,
         "currency": "EUR", "quote": None, "items_total_eur": None, "commission_eur": None,
         "total_eur": None, "total_xof": None, "package_id": None,
+        "received_weight_kg": None, "received_photo": None, "shipment_id": None,
         "status": "REQUESTED", "created_at": now_utc(),
     }
     res = await db.proxy_orders.insert_one(doc)
@@ -848,6 +894,115 @@ async def pay_proxy_order(pid: str, user=Depends(get_current_user)):
     checkout = pay_provider.initiate(str(res.inserted_id), _q2(to_decimal(po.get("total_xof")) or 0), "XOF")
     await db.payments.update_one({"_id": res.inserted_id}, {"$set": {"transaction_reference": checkout["checkout_ref"]}})
     return serialize(await db.payments.find_one({"_id": res.inserted_id}))
+
+
+@api.post("/me/proxy-orders/{pid}/ship-quote")
+async def proxy_ship_quote(pid: str, body: ProxyShipIn, user=Depends(get_current_user)):
+    po = await db.proxy_orders.find_one({"_id": oid(pid)})
+    if not po or po.get("user_id") != user["id"]:
+        raise HTTPException(status_code=404, detail="Commande introuvable")
+    if po.get("status") != "RECEIVED" or not po.get("received_weight_kg"):
+        raise HTTPException(status_code=409, detail="La commande n'est pas encore reçue et pesée")
+    zone = await db.delivery_zones.find_one({"_id": oid(body.delivery_zone_id)})
+    if not zone:
+        raise HTTPException(status_code=404, detail="Zone de livraison introuvable")
+    weight = to_decimal(po["received_weight_kg"])
+    snap, _, _ = await _price_for_weight(weight, zone, body.transport_mode)
+    return snap
+
+
+@api.post("/me/proxy-orders/{pid}/ship")
+async def proxy_ship(pid: str, body: ProxyShipIn, user=Depends(get_current_user)):
+    po = await db.proxy_orders.find_one({"_id": oid(pid)})
+    if not po or po.get("user_id") != user["id"]:
+        raise HTTPException(status_code=404, detail="Commande introuvable")
+    if po.get("status") != "RECEIVED" or not po.get("received_weight_kg"):
+        raise HTTPException(status_code=409, detail="La commande n'est pas encore reçue et pesée")
+    if po.get("shipment_id"):
+        raise HTTPException(status_code=409, detail="Une expédition existe déjà pour cette commande")
+    zone = await db.delivery_zones.find_one({"_id": oid(body.delivery_zone_id)})
+    if not zone:
+        raise HTTPException(status_code=404, detail="Zone de livraison introuvable")
+    weight = to_decimal(po["received_weight_kg"])
+    snap, total_eur, total_xof = await _price_for_weight(weight, zone, body.transport_mode)
+    ref = await gen_reference("SHP", db.shipments)
+    doc = {
+        "reference": ref, "user_id": user["id"], "origin_hub_id": None,
+        "destination_country_code": "BJ", "destination_city": zone["city"],
+        "delivery_zone_id": body.delivery_zone_id, "delivery_mode": body.delivery_mode,
+        "carrier_id": None, "transport_mode": body.transport_mode, "proxy_order_id": pid,
+        "total_billable_weight_kg": to_money(weight), "cost_eur": to_money(total_eur),
+        "cost_xof": to_money(total_xof), "tariff_snapshot": snap, "tracking_number": None,
+        "status": "DRAFT", "created_at": now_utc(),
+    }
+    res = await db.shipments.insert_one(doc)
+    sid = str(res.inserted_id)
+    await db.proxy_orders.update_one({"_id": oid(pid)}, {"$set": {"shipment_id": sid, "updated_at": now_utc()}})
+    await db.status_history.insert_one({"entity_type": "SHIPMENT", "entity_id": sid, "from_status": None, "to_status": "DRAFT", "actor_id": user["id"], "reason": "Création (achat proxy)", "created_at": now_utc()})
+    await write_audit(user["id"], "SHIPMENT_CREATE", "SHIPMENT", sid, None, snap)
+    await transition_status("SHIPMENT", sid, "AWAITING_PAYMENT", user["id"], "Devis validé")
+    await push_to_user(user["id"], "Devis d'expédition prêt",
+                       f"Votre expédition {ref} est prête : {snap.get('total_eur')} €.",
+                       f"/client/shipments/{sid}")
+    return serialize(await db.shipments.find_one({"_id": res.inserted_id}))
+
+
+# ============ SUPPORT (messagerie client ↔ staff) ============
+@api.get("/me/support/messages")
+async def my_support_messages(user=Depends(get_current_user)):
+    return serialize(await db.support_messages.find({"user_id": user["id"]}).sort("created_at", 1).to_list(500))
+
+
+@api.post("/me/support/messages")
+async def post_support_message(body: SupportMsgIn, user=Depends(get_current_user)):
+    text = (body.body or "").strip()
+    if not text:
+        raise HTTPException(status_code=400, detail="Message vide")
+    doc = {"user_id": user["id"], "sender": "CLIENT", "sender_id": user["id"],
+           "sender_name": user.get("name") or "Client", "body": text[:4000], "created_at": now_utc()}
+    await db.support_messages.insert_one(doc)
+    return serialize(await db.support_messages.find({"user_id": user["id"]}).sort("created_at", 1).to_list(500))
+
+
+@api.get("/admin/support/threads")
+async def admin_support_threads(user=Depends(require_roles("ADMIN", "OPERATOR"))):
+    msgs = await db.support_messages.find().sort("created_at", 1).to_list(5000)
+    threads = {}
+    for m in msgs:
+        uid = m["user_id"]
+        threads.setdefault(uid, {"user_id": uid, "count": 0, "last": None, "last_at": None})
+        threads[uid]["count"] += 1
+        threads[uid]["last"] = m.get("body")
+        threads[uid]["last_at"] = m.get("created_at")
+    out = []
+    for uid, t in threads.items():
+        prof = await db.profiles.find_one({"_id": oid(uid)})
+        t["client_name"] = f"{prof.get('first_name','')} {prof.get('last_name','')}".strip() if prof else uid
+        t["last_at"] = t["last_at"].isoformat() if t.get("last_at") else None
+        out.append(t)
+    out.sort(key=lambda x: x.get("last_at") or "", reverse=True)
+    return out
+
+
+@api.get("/admin/support/threads/{uid}")
+async def admin_support_thread(uid: str, user=Depends(require_roles("ADMIN", "OPERATOR"))):
+    prof = await db.profiles.find_one({"_id": oid(uid)})
+    return {
+        "client": serialize(prof) if prof else None,
+        "messages": serialize(await db.support_messages.find({"user_id": uid}).sort("created_at", 1).to_list(500)),
+    }
+
+
+@api.post("/admin/support/threads/{uid}")
+async def admin_support_reply(uid: str, body: SupportMsgIn, user=Depends(require_roles("ADMIN", "OPERATOR"))):
+    text = (body.body or "").strip()
+    if not text:
+        raise HTTPException(status_code=400, detail="Message vide")
+    doc = {"user_id": uid, "sender": "STAFF", "sender_id": user["id"],
+           "sender_name": user.get("name") or "Support", "body": text[:4000], "created_at": now_utc()}
+    await db.support_messages.insert_one(doc)
+    await push_to_user(uid, "Réponse du support", text[:120], "/client/support")
+    return serialize(await db.support_messages.find({"user_id": uid}).sort("created_at", 1).to_list(500))
 
 
 # ============ ADMIN : clients ============
@@ -1319,16 +1474,33 @@ async def admin_proxy_quote(pid: str, user=Depends(require_roles("ADMIN"))):
     return serialize(await db.proxy_orders.find_one({"_id": oid(pid)}))
 
 
+@api.post("/admin/proxy-orders/{pid}/hub-details")
+async def admin_proxy_hub_details(pid: str, body: ProxyHubIn, user=Depends(require_roles("ADMIN"))):
+    po = await db.proxy_orders.find_one({"_id": oid(pid)})
+    if not po:
+        raise HTTPException(status_code=404, detail="Commande introuvable")
+    if po.get("status") not in ("PAID", "RECEIVED"):
+        raise HTTPException(status_code=409, detail="Ajout du poids/photo possible après paiement")
+    upd = {"received_weight_kg": to_money(body.weight_kg), "updated_at": now_utc()}
+    if body.photo:
+        upd["received_photo"] = body.photo
+    await db.proxy_orders.update_one({"_id": oid(pid)}, {"$set": upd})
+    await write_audit(user["id"], "PROXY_HUB_DETAILS", "PROXY_ORDER", pid, None, {"weight_kg": str(body.weight_kg)})
+    return serialize(await db.proxy_orders.find_one({"_id": oid(pid)}))
+
+
 @api.post("/admin/proxy-orders/{pid}/receive")
 async def admin_proxy_receive(pid: str, body: ProxyReceiveIn, user=Depends(require_roles("ADMIN"))):
     po = await db.proxy_orders.find_one({"_id": oid(pid)})
     if not po:
         raise HTTPException(status_code=404, detail="Commande introuvable")
+    if not po.get("received_weight_kg"):
+        raise HTTPException(status_code=409, detail="Ajoutez d'abord le poids (et la photo) de la commande reçue")
     if body.package_id:
         await db.proxy_orders.update_one({"_id": oid(pid)}, {"$set": {"package_id": body.package_id, "updated_at": now_utc()}})
     await transition_status("PROXY_ORDER", pid, "RECEIVED", user["id"], body.reason or "Reçu au hub")
     await push_to_user(po.get("user_id"), "Achat reçu au hub",
-                       f"Les articles de votre commande {po.get('reference')} sont arrivés au hub.",
+                       f"Les articles de votre commande {po.get('reference')} sont arrivés au hub. Vous pouvez valider l'expédition.",
                        f"/client/proxy/{pid}")
     return serialize(await db.proxy_orders.find_one({"_id": oid(pid)}))
 

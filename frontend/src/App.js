@@ -24,6 +24,7 @@ import ClientShipmentNew from "@/pages/client/ClientShipmentNew";
 import ClientShipmentDetail from "@/pages/client/ClientShipmentDetail";
 import ClientProxy from "@/pages/client/ClientProxy";
 import ClientProxyDetail from "@/pages/client/ClientProxyDetail";
+import ClientSupport from "@/pages/client/ClientSupport";
 import ClientProfile from "@/pages/client/ClientProfile";
 import AdminDashboard from "@/pages/admin/AdminDashboard";
 import AdminClients from "@/pages/admin/AdminClients";
@@ -32,6 +33,7 @@ import AdminShipments from "@/pages/admin/AdminShipments";
 import AdminShipmentDetail from "@/pages/admin/AdminShipmentDetail";
 import AdminProxy from "@/pages/admin/AdminProxy";
 import AdminProxyDetail from "@/pages/admin/AdminProxyDetail";
+import AdminSupport from "@/pages/admin/AdminSupport";
 import AdminSettings from "@/pages/admin/AdminSettings";
 
 function AppRoutes() {
@@ -58,6 +60,7 @@ function AppRoutes() {
           <Route path="shipments/:id" element={<ClientShipmentDetail />} />
           <Route path="proxy" element={<ClientProxy />} />
           <Route path="proxy/:id" element={<ClientProxyDetail />} />
+          <Route path="support" element={<ClientSupport />} />
           <Route path="profile" element={<ClientProfile />} />
         </Route>
       </Route>
@@ -71,6 +74,7 @@ function AppRoutes() {
           <Route path="shipments/:id" element={<AdminShipmentDetail />} />
           <Route path="proxy" element={<AdminProxy />} />
           <Route path="proxy/:id" element={<AdminProxyDetail />} />
+          <Route path="support" element={<AdminSupport />} />
           <Route path="settings" element={<AdminSettings />} />
         </Route>
       </Route>

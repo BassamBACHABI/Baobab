@@ -6,7 +6,7 @@ export function LogoMark({ className }) {
       viewBox="0 0 40 40"
       className={cn("h-9 w-9", className)}
       role="img"
-      aria-label="Baobab Cargo"
+      aria-label="Baobab Transit"
     >
       <rect width="40" height="40" rx="11" className="fill-primary" />
       <ellipse cx="20" cy="14.5" rx="11" ry="6.5" fill="#E56B3D" />
@@ -29,7 +29,7 @@ export function Logo({ className, showText = true, textClassName }) {
             Baobab
           </span>
           <span className="block text-[10px] font-semibold uppercase tracking-[0.2em] text-accent">
-            Cargo
+            Transit
           </span>
         </div>
       )}

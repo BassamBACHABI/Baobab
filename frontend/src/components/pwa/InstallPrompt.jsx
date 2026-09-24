@@ -74,7 +74,7 @@ export function InstallPrompt() {
             <LogoMark className="h-8 w-8" />
           </div>
           <div className="min-w-0 flex-1">
-            <p className="text-sm font-semibold">Installer Baobab Cargo</p>
+            <p className="text-sm font-semibold">Installer Baobab Transit</p>
             <p className="mt-0.5 text-xs leading-relaxed text-white/70">
               Ajoutez l'application à votre écran d'accueil pour suivre vos
               colis plus rapidement.

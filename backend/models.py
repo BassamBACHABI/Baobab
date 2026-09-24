@@ -241,6 +241,29 @@ class ProxyReceiveIn(BaseModel):
     reason: Optional[str] = None
 
 
+class ProxyHubIn(BaseModel):
+    weight_kg: Decimal
+    photo: Optional[str] = None
+
+
+class ProxyShipIn(BaseModel):
+    delivery_zone_id: str
+    delivery_mode: str = "PICKUP_POINT"
+    transport_mode: str = "AIR"
+
+
+class SupportMsgIn(BaseModel):
+    body: str
+
+
+class TariffUpdateIn(BaseModel):
+    price_per_kg: Optional[Decimal] = None
+    fixed_fee: Optional[Decimal] = None
+    min_weight_kg: Optional[Decimal] = None
+    max_weight_kg: Optional[Decimal] = None
+    active: Optional[bool] = None
+
+
 class PrefIn(BaseModel):
     notify_non_essential: bool
 

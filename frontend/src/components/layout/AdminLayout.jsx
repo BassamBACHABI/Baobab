@@ -6,6 +6,7 @@ import {
   PackageCheck,
   Ship,
   ShoppingBag,
+  LifeBuoy,
   Settings,
   Menu,
   ArrowLeft,
@@ -24,6 +25,7 @@ const NAV = [
   { label: "Colis", icon: PackageCheck, to: "/admin/parcels", id: "parcels" },
   { label: "Expéditions", icon: Ship, to: "/admin/shipments", id: "shipments" },
   { label: "Achats proxy", icon: ShoppingBag, to: "/admin/proxy", id: "proxy", adminOnly: true },
+  { label: "Support", icon: LifeBuoy, to: "/admin/support", id: "support" },
   { label: "Paramètres", icon: Settings, to: "/admin/settings", id: "settings" },
 ];
 
@@ -123,7 +125,7 @@ export default function AdminLayout() {
             >
               <SheetTitle className="sr-only">Menu du back-office</SheetTitle>
               <SheetDescription className="sr-only">
-                Navigation entre les sections du back-office Baobab Cargo.
+                Navigation entre les sections du back-office Baobab Transit.
               </SheetDescription>
               <div className="mb-6 mt-2 px-2">
                 <Logo textClassName="text-white" />

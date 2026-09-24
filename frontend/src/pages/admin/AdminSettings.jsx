@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Coins, Warehouse, Truck, MapPin, Boxes, Plus } from "lucide-react";
+import { Coins, Warehouse, Truck, MapPin, Boxes, Plus, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { api, apiError } from "@/lib/api";
 import { PageHeader } from "@/components/common/PageHeader";
@@ -48,6 +48,15 @@ export default function AdminSettings() {
       setSettings((prev) => prev.map((s) => (s.key === key ? data : s)));
       toast.success("Paramètre enregistré");
     } catch (err) { toast.error(apiError(err.response?.data?.detail) || err.message); }
+  };
+
+  const patchTariff = async (tid, changes) => {
+    try { const { data } = await api.put(`/tariffs/${tid}`, changes); setTariffs((p) => p.map((x) => (x.id === tid ? data : x))); toast.success("Tarif mis à jour"); }
+    catch (err) { toast.error(apiError(err.response?.data?.detail) || err.message); }
+  };
+  const removeTariff = async (tid) => {
+    try { await api.delete(`/tariffs/${tid}`); setTariffs((p) => p.filter((x) => x.id !== tid)); toast.success("Tarif supprimé"); }
+    catch (err) { toast.error(apiError(err.response?.data?.detail) || err.message); }
   };
 
   return (
@@ -113,7 +122,11 @@ export default function AdminSettings() {
 
         {/* Tarifs */}
         <TabsContent value="tariffs" className="mt-4 space-y-4">
-          <ListCards items={tariffs} render={(t) => <><p className="font-semibold">{t.min_weight_kg} – {t.max_weight_kg} kg</p><p className="text-sm text-muted-foreground">{t.transport_mode} · {t.price_per_kg} €/kg + {t.fixed_fee} € · {t.destination_country_code}</p></>} testId="tariffs-list" />
+          <div className="space-y-2" data-testid="tariffs-list">
+            {tariffs.length === 0 ? <p className="text-sm text-muted-foreground">Aucun tarif.</p> : tariffs.map((t) => (
+              <TariffRow key={t.id} t={t} onSave={patchTariff} onDelete={removeTariff} />
+            ))}
+          </div>
           <CreateForm title="Nouvelle tranche tarifaire" testId="tariff"
             fields={[
               { name: "origin_country_id", label: "Pays d'origine", type: "select", options: countries.map((c) => ({ value: c.id, label: c.name })) },
@@ -128,6 +141,23 @@ export default function AdminSettings() {
         </TabsContent>
       </Tabs>
     </div>
+  );
+}
+
+function TariffRow({ t, onSave, onDelete }) {
+  const [price, setPrice] = useState(String(t.price_per_kg));
+  const [fixed, setFixed] = useState(String(t.fixed_fee));
+  return (
+    <Card className="rounded-xl border-border"><CardContent className="flex flex-wrap items-end gap-3 p-4">
+      <div className="min-w-[90px]">
+        <p className="text-sm font-semibold text-foreground">{t.min_weight_kg}–{t.max_weight_kg} kg</p>
+        <p className="text-[10px] uppercase text-muted-foreground">{t.transport_mode} · {t.destination_country_code}</p>
+      </div>
+      <div className="space-y-1"><Label className="text-[10px]">€/kg</Label><Input type="number" step="0.01" data-testid={`tariff-price-${t.id}`} value={price} onChange={(e) => setPrice(e.target.value)} className="h-9 w-24 rounded-xl" /></div>
+      <div className="space-y-1"><Label className="text-[10px]">Frais fixes €</Label><Input type="number" step="0.01" data-testid={`tariff-fixed-${t.id}`} value={fixed} onChange={(e) => setFixed(e.target.value)} className="h-9 w-24 rounded-xl" /></div>
+      <Button onClick={() => onSave(t.id, { price_per_kg: Number(price), fixed_fee: Number(fixed) })} data-testid={`save-tariff-${t.id}`} className="h-9 rounded-xl bg-accent text-white hover:bg-[#D45A2C]">Enregistrer</Button>
+      <Button onClick={() => onDelete(t.id)} variant="outline" data-testid={`delete-tariff-${t.id}`} className="h-9 rounded-xl text-red-600"><Trash2 className="h-4 w-4" /></Button>
+    </CardContent></Card>
   );
 }
 

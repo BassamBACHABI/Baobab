@@ -1,5 +1,6 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Link } from "react-router-dom";
+import { api } from "@/lib/api";
 import {
   ArrowRight,
   MapPin,
@@ -16,6 +17,7 @@ import {
   Quote,
   Plus,
   Minus,
+  Star,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Logo } from "@/components/brand/Logo";
@@ -74,11 +76,13 @@ const SERVICES = [
   },
 ];
 
-const TARIFFS = [
-  { range: "0 – 1 kg", price: "12,00 €/kg", extra: "+ 5 € fixes" },
-  { range: "1 – 5 kg", price: "9,50 €/kg", extra: "sans frais fixes" },
-  { range: "5 – 20 kg", price: "7,00 €/kg", extra: "sans frais fixes" },
-  { range: "20 – 50 kg", price: "5,50 €/kg", extra: "sans frais fixes" },
+const REVIEWS = [
+  { name: "Awa S.", city: "Cotonou", rating: 5, text: "Je commande sur mes boutiques européennes et je reçois tout à Cotonou en quelques jours. Le suivi et les prix en FCFA me rassurent." },
+  { name: "Koffi A.", city: "Porto-Novo", rating: 5, text: "Service impeccable : mes colis sont pesés, pris en photo, et j'ai payé en ligne sans souci. Je recommande vivement." },
+  { name: "Rachidatou B.", city: "Parakou", rating: 4, text: "Très bonne expérience. Livraison rapide par avion. J'aurais aimé encore plus d'options de paiement, ça arrive bientôt paraît-il." },
+  { name: "Marius H.", city: "Abomey-Calavi", rating: 5, text: "Ils ont acheté mes articles pour moi en Europe puis tout expédié. Un vrai gain de temps, tout était transparent." },
+  { name: "Grâce D.", city: "Cotonou", rating: 4, text: "Interface claire et notifications à chaque étape. Mes colis sont arrivés en parfait état." },
+  { name: "Ismaël T.", city: "Bohicon", rating: 5, text: "Enfin un service fiable pour recevoir mes achats d'Europe au Bénin. Les tarifs sont clairs dès le départ." },
 ];
 
 const FAQ = [
@@ -111,6 +115,11 @@ function FaqItem({ item, open, onToggle, index }) {
 
 export default function Landing() {
   const [openFaq, setOpenFaq] = useState(0);
+  const [tariffs, setTariffs] = useState([]);
+
+  useEffect(() => {
+    api.get("/public/tariffs").then(({ data }) => setTariffs(data)).catch(() => {});
+  }, []);
 
   return (
     <div className="min-h-screen bg-background">
@@ -185,7 +194,7 @@ export default function Landing() {
         {/* Pourquoi */}
         <section className="mx-auto max-w-6xl px-4 py-14 sm:px-6 sm:py-20">
           <div className="max-w-2xl">
-            <p className="text-xs font-bold uppercase tracking-widest text-accent">Pourquoi Baobab Cargo</p>
+            <p className="text-xs font-bold uppercase tracking-widest text-accent">Pourquoi Baobab Transit</p>
             <h2 className="mt-2 text-2xl font-bold tracking-tight text-foreground sm:text-3xl">
               Tout pour recevoir vos colis sereinement
             </h2>
@@ -265,18 +274,15 @@ export default function Landing() {
                 s'affiche en euros et en francs CFA avant paiement.
               </p>
             </div>
-            <div className="mt-10 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-              {TARIFFS.map((t) => (
-                <div key={t.range} className="rounded-2xl border border-border bg-card p-6 text-center shadow-card">
-                  <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">{t.range}</p>
-                  <p className="mt-2 text-2xl font-extrabold tracking-tight text-foreground">{t.price}</p>
-                  <p className="mt-1 text-xs text-muted-foreground">{t.extra}</p>
+            <div className="mt-10 grid gap-4 sm:grid-cols-2 lg:grid-cols-4" data-testid="landing-tariffs">
+              {tariffs.map((t, i) => (
+                <div key={i} className="rounded-2xl border border-border bg-card p-6 text-center shadow-card">
+                  <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">{t.min_weight_kg} – {t.max_weight_kg} kg</p>
+                  <p className="mt-2 text-2xl font-extrabold tracking-tight text-foreground">{t.price_per_kg} €/kg</p>
+                  <p className="mt-1 text-xs text-muted-foreground">{Number(t.fixed_fee) > 0 ? `+ ${t.fixed_fee} € fixes` : "sans frais fixes"}</p>
                 </div>
               ))}
             </div>
-            <p className="mt-6 text-xs text-muted-foreground">
-              Livraison locale : point relais à Cotonou dès 1 500 FCFA · à domicile dès 5 000 FCFA.
-            </p>
           </div>
         </section>
 
@@ -299,6 +305,30 @@ export default function Landing() {
                   <p className="text-xs text-muted-foreground">Cliente à Cotonou</p>
                 </div>
               </div>
+            </div>
+          </div>
+        </section>
+
+        {/* Avis clients */}
+        <section className="border-t border-border">
+          <div className="mx-auto max-w-6xl px-4 py-14 sm:px-6 sm:py-20">
+            <div className="max-w-2xl">
+              <p className="text-xs font-bold uppercase tracking-widest text-accent">Avis clients</p>
+              <h2 className="mt-2 text-2xl font-bold tracking-tight text-foreground sm:text-3xl">Ils reçoivent leurs colis au Bénin</h2>
+            </div>
+            <div className="mt-10 grid gap-5 sm:grid-cols-2 lg:grid-cols-3" data-testid="landing-reviews">
+              {REVIEWS.map((r, i) => (
+                <div key={i} className="rounded-2xl border border-border bg-card p-6 shadow-card">
+                  <div className="flex gap-0.5">
+                    {[0, 1, 2, 3, 4].map((s) => (<Star key={s} className={`h-4 w-4 ${s < r.rating ? "fill-amber-400 text-amber-400" : "text-muted-foreground/30"}`} />))}
+                  </div>
+                  <p className="mt-3 text-sm leading-relaxed text-foreground">« {r.text} »</p>
+                  <div className="mt-4 flex items-center gap-3">
+                    <div className="flex h-9 w-9 items-center justify-center rounded-full bg-accent/10 text-sm font-bold text-accent">{r.name[0]}</div>
+                    <div><p className="text-sm font-semibold text-foreground">{r.name}</p><p className="text-xs text-muted-foreground">{r.city}</p></div>
+                  </div>
+                </div>
+              ))}
             </div>
           </div>
         </section>
@@ -346,7 +376,7 @@ export default function Landing() {
           </div>
           <div className="flex flex-col gap-2 sm:items-end">
             <Link to="/login" className="text-sm text-muted-foreground hover:text-accent">Espace client</Link>
-            <p className="mt-2 text-xs text-muted-foreground">© {new Date().getFullYear()} Baobab Cargo · Transit Europe → Bénin</p>
+            <p className="mt-2 text-xs text-muted-foreground">© {new Date().getFullYear()} Baobab Transit · Transit Europe → Bénin</p>
           </div>
         </div>
       </footer>

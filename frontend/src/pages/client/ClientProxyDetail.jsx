@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
-import { ArrowLeft, CreditCard, CheckCircle2, XCircle, ExternalLink } from "lucide-react";
+import { ArrowLeft, CreditCard, CheckCircle2, XCircle, ExternalLink, Ship, Loader2 } from "lucide-react";
 import { toast } from "sonner";
 import { api, apiError } from "@/lib/api";
 import { StatusBadge, STATUS_LABELS } from "@/components/common/StatusBadge";
@@ -15,9 +15,17 @@ export default function ClientProxyDetail() {
   const [payment, setPayment] = useState(null);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
+  const [zones, setZones] = useState([]);
+  const [zoneId, setZoneId] = useState("");
+  const [transport, setTransport] = useState("AIR");
+  const [shipQuote, setShipQuote] = useState(null);
 
   const load = async () => {
-    try { const { data } = await api.get(`/me/proxy-orders/${id}`); setOrder(data); }
+    try {
+      const [o, z] = await Promise.all([api.get(`/me/proxy-orders/${id}`), api.get("/delivery-zones")]);
+      setOrder(o.data);
+      setZones((z.data || []).filter((x) => x.active !== false));
+    }
     catch { toast.error("Commande introuvable."); navigate("/client/proxy"); } finally { setLoading(false); }
   };
   useEffect(() => { load(); }, [id]);
@@ -34,6 +42,20 @@ export default function ClientProxyDetail() {
       toast[result === "success" ? "success" : "error"](result === "success" ? "Paiement confirmé" : "Paiement échoué");
       setPayment(null); await load();
     } catch (err) { toast.error(apiError(err.response?.data?.detail) || err.message); } finally { setBusy(false); }
+  };
+
+  const getShipQuote = async () => {
+    if (!zoneId) { toast.error("Choisissez une zone."); return; }
+    const zone = zones.find((z) => z.id === zoneId);
+    setBusy(true);
+    try { const { data } = await api.post(`/me/proxy-orders/${id}/ship-quote`, { delivery_zone_id: zoneId, delivery_mode: zone?.delivery_mode || "PICKUP_POINT", transport_mode: transport }); setShipQuote(data); }
+    catch (err) { toast.error(apiError(err.response?.data?.detail) || err.message); } finally { setBusy(false); }
+  };
+  const confirmShip = async () => {
+    const zone = zones.find((z) => z.id === zoneId);
+    setBusy(true);
+    try { const { data } = await api.post(`/me/proxy-orders/${id}/ship`, { delivery_zone_id: zoneId, delivery_mode: zone?.delivery_mode || "PICKUP_POINT", transport_mode: transport }); toast.success("Expédition créée"); navigate(`/client/shipments/${data.id}`); }
+    catch (err) { toast.error(apiError(err.response?.data?.detail) || err.message); } finally { setBusy(false); }
   };
 
   if (loading) return <div className="space-y-4"><Skeleton className="h-8 w-40" /><Skeleton className="h-40 w-full rounded-2xl" /></div>;
@@ -85,6 +107,41 @@ export default function ClientProxyDetail() {
               </div>
             </div>
           )}
+        </CardContent></Card>
+      )}
+
+      {order.received_weight_kg && (
+        <Card className="rounded-2xl border-border shadow-card" data-testid="proxy-hub-card"><CardContent className="p-5">
+          <h3 className="mb-3 text-sm font-semibold">Réception au hub</h3>
+          <p className="text-sm text-muted-foreground">Poids reçu : <span className="font-semibold text-foreground">{order.received_weight_kg} kg</span></p>
+          {order.received_photo && <img src={order.received_photo} alt="Commande reçue au hub" className="mt-3 max-h-56 rounded-xl border border-border object-cover" />}
+          {order.shipment_id ? (
+            <Button onClick={() => navigate(`/client/shipments/${order.shipment_id}`)} data-testid="proxy-view-shipment" className="mt-4 w-full rounded-xl bg-accent text-white hover:bg-[#D45A2C]"><Ship className="mr-1.5 h-4 w-4" /> Voir l'expédition</Button>
+          ) : order.status === "RECEIVED" ? (
+            <div className="mt-4 space-y-3">
+              <p className="text-sm font-semibold">Valider l'expédition vers le Bénin</p>
+              <div className="grid gap-3 sm:grid-cols-2">
+                <select data-testid="proxy-zone-select" value={zoneId} onChange={(e) => { setZoneId(e.target.value); setShipQuote(null); }} className="h-11 w-full rounded-xl border border-input bg-background px-3 text-sm">
+                  <option value="">Zone de livraison…</option>
+                  {zones.map((z) => (<option key={z.id} value={z.id}>{z.name} ({z.delivery_mode === "HOME" ? "Domicile" : "Point relais"})</option>))}
+                </select>
+                <select data-testid="proxy-transport-select" value={transport} onChange={(e) => { setTransport(e.target.value); setShipQuote(null); }} className="h-11 w-full rounded-xl border border-input bg-background px-3 text-sm">
+                  <option value="AIR">Aérien (2–3 jours)</option><option value="SEA">Maritime</option>
+                </select>
+              </div>
+              {!shipQuote ? (
+                <Button onClick={getShipQuote} disabled={busy} data-testid="proxy-ship-quote-btn" variant="outline" className="rounded-xl">{busy ? <Loader2 className="h-4 w-4 animate-spin" /> : "Obtenir un devis"}</Button>
+              ) : (
+                <div className="rounded-xl border border-accent/40 bg-accent/5 p-4 text-sm" data-testid="proxy-ship-quote">
+                  <div className="flex justify-between"><span className="text-muted-foreground">Transport ({shipQuote.total_billable_weight_kg} kg)</span><span>{shipQuote.transport_eur} €</span></div>
+                  <div className="flex justify-between"><span className="text-muted-foreground">Livraison locale</span><span>{shipQuote.delivery_fee_xof} FCFA</span></div>
+                  <div className="my-2 h-px bg-border" />
+                  <div className="flex justify-between text-base font-bold"><span>Total</span><span>{shipQuote.total_eur} € · {shipQuote.total_xof} FCFA</span></div>
+                  <Button onClick={confirmShip} disabled={busy} data-testid="proxy-confirm-ship-btn" className="mt-3 w-full rounded-xl bg-accent text-white hover:bg-[#D45A2C]">Valider et créer l'expédition</Button>
+                </div>
+              )}
+            </div>
+          ) : null}
         </CardContent></Card>
       )}
 
