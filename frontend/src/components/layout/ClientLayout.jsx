@@ -1,7 +1,9 @@
 import { NavLink, Outlet, useLocation, useNavigate } from "react-router-dom";
+import { useEffect, useState } from "react";
 import { Home, Package, Truck, ShoppingBag, LifeBuoy, User, LogOut } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/context/AuthContext";
+import { api } from "@/lib/api";
 import { Logo } from "@/components/brand/Logo";
 import { ThemeToggle } from "@/components/theme/ThemeToggle";
 import { Button } from "@/components/ui/button";
@@ -19,6 +21,11 @@ export default function ClientLayout() {
   const location = useLocation();
   const navigate = useNavigate();
   const { user, logout } = useAuth();
+  const [badges, setBadges] = useState({});
+
+  useEffect(() => {
+    api.get("/me/badges").then(({ data }) => setBadges(data)).catch(() => {});
+  }, [location.pathname]);
 
   const doLogout = async () => {
     await logout();
@@ -49,7 +56,10 @@ export default function ClientLayout() {
               }
             >
               <item.icon className="h-5 w-5" />
-              {item.label}
+              <span>{item.label}</span>
+              {badges[item.id] > 0 && (
+                <span className="ml-auto flex h-5 min-w-5 items-center justify-center rounded-full bg-accent px-1.5 text-[10px] font-bold text-white" data-testid={`client-badge-${item.id}`}>{badges[item.id]}</span>
+              )}
             </NavLink>
           ))}
         </nav>
@@ -107,10 +117,15 @@ export default function ClientLayout() {
                 isActive ? "text-accent" : "text-muted-foreground",
               )}
             >
-              <item.icon
-                className={cn("h-5 w-5", isActive && "scale-110")}
-                strokeWidth={isActive ? 2.4 : 2}
-              />
+              <span className="relative">
+                <item.icon
+                  className={cn("h-5 w-5", isActive && "scale-110")}
+                  strokeWidth={isActive ? 2.4 : 2}
+                />
+                {badges[item.id] > 0 && (
+                  <span className="absolute -right-2 -top-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-accent px-1 text-[9px] font-bold text-white" data-testid={`client-bottom-badge-${item.id}`}>{badges[item.id]}</span>
+                )}
+              </span>
               {item.label}
             </NavLink>
           );

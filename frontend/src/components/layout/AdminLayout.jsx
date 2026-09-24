@@ -1,5 +1,5 @@
-import { useState } from "react";
-import { NavLink, Outlet, useNavigate } from "react-router-dom";
+import { useState, useEffect } from "react";
+import { NavLink, Outlet, useNavigate, useLocation } from "react-router-dom";
 import {
   LayoutDashboard,
   Users,
@@ -14,6 +14,7 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/context/AuthContext";
+import { api } from "@/lib/api";
 import { Logo } from "@/components/brand/Logo";
 import { ThemeToggle } from "@/components/theme/ThemeToggle";
 import { Button } from "@/components/ui/button";
@@ -31,8 +32,13 @@ const NAV = [
 
 function NavItems({ onNavigate }) {
   const { user } = useAuth();
+  const location = useLocation();
   const isAdmin = user?.roles?.includes("ADMIN");
   const items = NAV.filter((i) => !i.adminOnly || isAdmin);
+  const [badges, setBadges] = useState({});
+  useEffect(() => {
+    api.get("/admin/badges").then(({ data }) => setBadges(data)).catch(() => {});
+  }, [location.pathname]);
   return (
     <nav className="space-y-1" data-testid="admin-nav">
       {items.map((item) => (
@@ -52,7 +58,10 @@ function NavItems({ onNavigate }) {
           }
         >
           <item.icon className="h-5 w-5" />
-          {item.label}
+          <span>{item.label}</span>
+          {badges[item.id] > 0 && (
+            <span className="ml-auto flex h-5 min-w-5 items-center justify-center rounded-full bg-accent px-1.5 text-[10px] font-bold text-white" data-testid={`admin-badge-${item.id}`}>{badges[item.id]}</span>
+          )}
         </NavLink>
       ))}
     </nav>

@@ -1005,6 +1005,38 @@ async def admin_support_reply(uid: str, body: SupportMsgIn, user=Depends(require
     return serialize(await db.support_messages.find({"user_id": uid}).sort("created_at", 1).to_list(500))
 
 
+@api.post("/me/support/seen")
+async def support_mark_seen(user=Depends(get_current_user)):
+    await db.profiles.update_one({"_id": oid(user["id"])}, {"$set": {"support_seen_at": now_utc()}})
+    return {"ok": True}
+
+
+@api.get("/me/badges")
+async def my_badges(user=Depends(get_current_user)):
+    prof = await db.profiles.find_one({"_id": oid(user["id"])})
+    seen = (prof or {}).get("support_seen_at")
+    sup_q = {"user_id": user["id"], "sender": "STAFF"}
+    if seen:
+        sup_q["created_at"] = {"$gt": seen}
+    support = await db.support_messages.count_documents(sup_q)
+    proxy = await db.proxy_orders.count_documents({"user_id": user["id"], "status": "QUOTED"})
+    proxy += await db.proxy_orders.count_documents({"user_id": user["id"], "status": "RECEIVED", "shipment_id": None})
+    return {"support": support, "proxy": proxy}
+
+
+@api.get("/admin/badges")
+async def admin_badges(user=Depends(require_roles("ADMIN", "OPERATOR"))):
+    msgs = await db.support_messages.find({}, {"user_id": 1, "sender": 1}).sort("created_at", 1).to_list(5000)
+    last = {}
+    for m in msgs:
+        last[m["user_id"]] = m.get("sender")
+    support = sum(1 for v in last.values() if v == "CLIENT")
+    proxy = 0
+    if is_admin(user):
+        proxy = await db.proxy_orders.count_documents({"status": {"$in": ["REQUESTED", "PAID"]}})
+    return {"support": support, "proxy": proxy}
+
+
 # ============ ADMIN : clients ============
 @api.get("/admin/clients")
 async def admin_clients(user=Depends(require_roles("ADMIN", "OPERATOR"))):

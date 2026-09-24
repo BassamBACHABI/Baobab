@@ -14,7 +14,7 @@ export default function ClientSupport() {
   const endRef = useRef(null);
 
   const load = async () => {
-    try { const { data } = await api.get("/me/support/messages"); setMessages(data); }
+    try { const { data } = await api.get("/me/support/messages"); setMessages(data); api.post("/me/support/seen").catch(() => {}); }
     catch { toast.error("Erreur de chargement."); }
   };
   useEffect(() => { load(); }, []);
