@@ -80,6 +80,14 @@ Marque retenue : **Baobab Cargo** (nom court « Baobab »).
 ## Fait — Page d'accueil enrichie (2026-06)
 - Landing refondue et illustrée (charte respectée) : hero + badge de suivi, bandeau de chiffres (2–3 j, parité 655,957, temps réel, EUR & FCFA), grille « Pourquoi Baobab Cargo » (4 atouts), « Comment ça marche » (3 étapes), 3 sections image/texte (consolidation, réception & pesée, suivi mobile), tarifs indicatifs, témoignage, FAQ (accordéon), CTA et footer enrichi. Images réelles (Unsplash/Pexels) pertinentes. Vérifié à l'écran.
 
+## Fait — Rebrand + Proxy hub + Support + Tarifs éditables (2026-06)
+- **Rebrand** « Baobab Cargo » → **« Baobab Transit »** partout (Logo, PWA manifest/index.html, back-office, e-mails, API title, landing).
+- **Proxy — réception au hub & validation client** : admin ajoute **poids + photo** (`/admin/proxy-orders/{id}/hub-details`), la réception (`/receive`) est refusée (409) sans poids. Le client valide ensuite l'**expédition** (`/ship-quote` puis `/ship`) : une expédition réelle est créée depuis le poids reçu (liée via `proxy_order_id`, sans créer de colis), puis payée via le flux existant. Refactor pricing partagé `_price_for_weight`.
+- **Support** : messagerie interne 1 conversation/client (`/me/support/messages`, `/admin/support/threads*`), onglets Support côté client et admin (ADMIN+OPERATOR).
+- **Tarifs** : édition (`PUT /tariffs/{id}`) + suppression (`DELETE`) côté admin (journalisé), affichage public sur la landing via `GET /public/tariffs`.
+- **Landing** : phrase « point relais à Cotonou » retirée, section **avis 4-5★** ajoutée, tarifs dynamiques.
+- Vérifié testing agent : **17/17 backend PASS, frontend 100 %**, RBAC strict (OPERATOR 403 sur proxy & tarifs), isolation client 404, décimaux exacts. Commission proxy par défaut = 10 % (min 5 €), configurable.
+
 ## Backlog priorisé (prochains prompts, ne pas anticiper)
 - **P1** : Paiement réel Mobile Money **KkiaPay** (MTN/Moov + carte, sandbox puis prod) — remplacer `SimulationProvider`.
 - **P1** : Relance automatique de devis impayé après 48 h (tâche planifiée quotidienne).
