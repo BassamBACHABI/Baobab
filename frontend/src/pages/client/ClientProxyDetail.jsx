@@ -19,12 +19,16 @@ export default function ClientProxyDetail() {
   const [zoneId, setZoneId] = useState("");
   const [transport, setTransport] = useState("AIR");
   const [shipQuote, setShipQuote] = useState(null);
+  const [shipment, setShipment] = useState(null);
 
   const load = async () => {
     try {
       const [o, z] = await Promise.all([api.get(`/me/proxy-orders/${id}`), api.get("/delivery-zones")]);
       setOrder(o.data);
       setZones((z.data || []).filter((x) => x.active !== false));
+      if (o.data.shipment_id) {
+        try { const sh = await api.get(`/me/shipments/${o.data.shipment_id}`); setShipment(sh.data); } catch (e) { /* ignore */ }
+      } else { setShipment(null); }
     }
     catch { toast.error("Commande introuvable."); navigate("/client/proxy"); } finally { setLoading(false); }
   };
@@ -116,7 +120,21 @@ export default function ClientProxyDetail() {
           <p className="text-sm text-muted-foreground">Poids reçu : <span className="font-semibold text-foreground">{order.received_weight_kg} kg</span></p>
           {order.received_photo && <img src={order.received_photo} alt="Commande reçue au hub" className="mt-3 max-h-56 rounded-xl border border-border object-cover" />}
           {order.shipment_id ? (
-            <Button onClick={() => navigate(`/client/shipments/${order.shipment_id}`)} data-testid="proxy-view-shipment" className="mt-4 w-full rounded-xl bg-accent text-white hover:bg-[#D45A2C]"><Ship className="mr-1.5 h-4 w-4" /> Voir l'expédition</Button>
+            <div className="mt-4 rounded-xl border border-border bg-card p-4" data-testid="proxy-shipment-box">
+              <div className="flex items-center justify-between">
+                <span className="font-mono text-sm font-semibold">{shipment?.reference || "Expédition"}</span>
+                {shipment && <StatusBadge status={shipment.status} />}
+              </div>
+              {shipment && <p className="mt-1 text-sm text-muted-foreground">{shipment.cost_eur} € · {shipment.cost_xof} FCFA</p>}
+              {shipment?.status === "AWAITING_PAYMENT" ? (
+                <>
+                  <p className="mt-2 text-xs font-medium text-amber-600">Réglez la facture d'expédition pour lancer l'envoi vers le Bénin.</p>
+                  <Button onClick={() => navigate(`/client/shipments/${order.shipment_id}`)} data-testid="proxy-pay-shipment" className="mt-3 w-full rounded-xl bg-accent text-white hover:bg-[#D45A2C]"><CreditCard className="mr-1.5 h-4 w-4" /> Payer l'expédition</Button>
+                </>
+              ) : (
+                <Button onClick={() => navigate(`/client/shipments/${order.shipment_id}`)} data-testid="proxy-view-shipment" variant="outline" className="mt-3 w-full rounded-xl"><Ship className="mr-1.5 h-4 w-4" /> Voir l'expédition</Button>
+              )}
+            </div>
           ) : order.status === "RECEIVED" ? (
             <div className="mt-4 space-y-3">
               <p className="text-sm font-semibold">Valider l'expédition vers le Bénin</p>

@@ -89,6 +89,7 @@ Marque retenue : **Baobab Cargo** (nom court « Baobab »).
 - Vérifié testing agent : **17/17 backend PASS, frontend 100 %**, RBAC strict (OPERATOR 403 sur proxy & tarifs), isolation client 404, décimaux exacts. Commission proxy par défaut = 10 % (min 5 €), configurable.
 
 ## Backlog priorisé (prochains prompts, ne pas anticiper)
+- **Paiement expédition proxy explicite (2026-06)** : après réception au hub, la commande proxy affiche l'état de l'expédition + bouton « Payer l'expédition » ; l'envoi vers le Bénin reste bloqué (409) tant que l'expédition n'est pas payée (vérifié curl). Section « Achats pour moi » ajoutée à la landing.
 - **P1** : Paiement réel Mobile Money **KkiaPay** (MTN/Moov + carte, sandbox puis prod) — remplacer `SimulationProvider`.
 - **P1** : Relance automatique de devis impayé après 48 h (tâche planifiée quotidienne).
 

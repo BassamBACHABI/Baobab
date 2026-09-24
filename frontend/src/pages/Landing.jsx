@@ -29,6 +29,7 @@ const IMG = {
   boxes: "https://images.unsplash.com/photo-1624137527136-66e631bdaa0e?crop=entropy&cs=srgb&fm=jpg&q=85&w=900&h=700&fit=crop",
   phone: "https://images.unsplash.com/photo-1512428559087-560fa5ceab42?crop=entropy&cs=srgb&fm=jpg&q=85&w=900&h=700&fit=crop",
   customer: "https://images.pexels.com/photos/6868624/pexels-photo-6868624.jpeg?auto=compress&cs=tinysrgb&dpr=2&h=760&w=1040",
+  proxy: "https://images.unsplash.com/photo-1733503747506-773e56e4078f?crop=entropy&cs=srgb&fm=jpg&q=85&w=1040&h=760&fit=crop",
 };
 
 const STATS = [
@@ -259,6 +260,34 @@ export default function Landing() {
               </div>
             </div>
           ))}
+        </section>
+
+        {/* Service Achats pour moi (Proxy Shopping) */}
+        <section className="border-y border-border bg-[#0B2046] text-white" data-testid="landing-proxy-section">
+          <div className="mx-auto max-w-6xl px-4 py-14 sm:px-6 sm:py-20">
+            <div className="grid items-center gap-8 lg:grid-cols-2">
+              <div className="overflow-hidden rounded-3xl border border-white/10 shadow-card">
+                <img src={IMG.proxy} alt="Achats en ligne en Europe livrés au Bénin" className="h-full max-h-[400px] w-full object-cover" loading="lazy" />
+              </div>
+              <div>
+                <p className="text-xs font-bold uppercase tracking-widest text-accent">Nouveau service</p>
+                <h2 className="mt-2 text-2xl font-bold tracking-tight sm:text-3xl">Achats pour moi : nous achetons en Europe pour vous</h2>
+                <p className="mt-3 text-base leading-relaxed text-white/70">
+                  Pas de carte bancaire européenne ? Un vendeur qui ne livre qu'en Europe ? Envoyez-nous les
+                  liens de vos articles : <span className="font-semibold text-white">Baobab Transit</span> les achète,
+                  les réceptionne à son hub, puis vous les expédie au Bénin.
+                </p>
+                <ul className="mt-5 space-y-2">
+                  {["Envoyez simplement les liens produits", "Devis clair : articles + commission", "Paiement en ligne sécurisé", "Réception, photo et expédition vers le Bénin"].map((p) => (
+                    <li key={p} className="flex items-center gap-2 text-sm"><CheckCircle2 className="h-4 w-4 text-accent" /> {p}</li>
+                  ))}
+                </ul>
+                <Button asChild size="lg" className="mt-6 h-12 rounded-xl bg-accent px-7 text-base text-white shadow-cta hover:bg-[#D45A2C]" data-testid="landing-proxy-cta">
+                  <Link to="/login">Demander un achat <ArrowRight className="ml-1.5 h-5 w-5" /></Link>
+                </Button>
+              </div>
+            </div>
+          </div>
         </section>
 
         {/* Tarifs indicatifs */}
