@@ -1,0 +1,25 @@
+{
+  "summary": "Iteration 6 validated: (BUG FIX) /admin/clients page is no longer empty — renders 12 client cards with names, emails, CLB-XXXXXX customer_references, 'Actif' status, dates; clients-search filters to 'awa' correctly. (BADGES) GET /me/badges returns {support, proxy} shape, requires auth (401 without), and client support badge flow works end-to-end: awa POSTs support msg → /me/support/seen resets → ADMIN replies via /admin/support/threads/{uid} → next /me/badges shows support++ → POST /me/support/seen resets back to 0. GET /admin/badges returns {support, proxy}, forbidden to CLIENT (403), OPERATOR proxy=0, ADMIN support>=1 after a client posts a new message. (FRONTEND) Admin sidebar shows admin-badge-support=1 pill (visible in screenshot). Client greeting on ClientHome shows 'BONJOUR, AWA 👋'. due-eur='0,00 €' and due-xof='0 FCFA' for awa (no shipment in AWAITING_PAYMENT / proxy QUOTED at test time) so pay-due-btn correctly hidden. Support badge cleared correctly after visiting /client/support. Backend pytest: 10/10 PASS in /app/backend/tests/test_badges_and_clients.py.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {"ui_bugs": [], "integration_issues": [], "design_issues": []},
+  "test_report_links": [
+    "/app/backend/tests/test_badges_and_clients.py",
+    "/app/test_reports/pytest/iter6_results.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "server.py continues to grow (~1695 lines) — the split into routers is now overdue.",
+    "GET /admin/badges builds a Python dict over up to 5000 support_messages sorted asc then re-reads — for scale should be a single $group aggregation returning last_sender per user_id.",
+    "GET /admin/clients iterates ALL profiles (500 limit) doing a per-profile db.user_roles.find() — N+1 pattern. Should use a $lookup or a single roles fetch keyed by user_id.",
+    "Frontend ClientLayout/AdminLayout poll /me/badges and /admin/badges on route change only — no websocket or interval refresh so a badge appearing due to a peer action (e.g., admin replying) is not reflected until user navigates. Acceptable MVP, worth noting.",
+    "/me/badges uses profiles.support_seen_at but the profile _id is oid(user['id']) — works but tightly couples badge logic to profile existence; a missing profile would give 'seen=None' and count all STAFF messages ever."
+  ],
+  "updated_files": ["/app/backend/tests/test_badges_and_clients.py"],
+  "success_rate": {"backend": "100% (10/10)", "frontend": "100% (all selectors and flows validated)"},
+  "test_credentials": "As per /app/memory/test_credentials.md — unchanged.",
+  "seed_data_creation": "Test support messages 'TEST_BADGE_...' and 'TEST_REPLY_BADGE_...' left in awa's + koffi's threads (idempotent, no side effects on other flows).",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Backend test file /app/backend/tests/test_badges_and_clients.py uses a small _get_base() helper that falls back to reading /app/frontend/.env when REACT_APP_BACKEND_URL is not in the pytest env — this pattern can be reused by future tests. To exercise 'Frais à régler' > 0 on ClientHome, either (a) create a proxy order and have admin /quote it (leaves it in QUOTED for the client to see due), or (b) create a package + shipment and stop at AWAITING_PAYMENT. Both flows are already covered by test_batch_proxy_support_tariffs.py.",
+  "rca of the issue": "N/A — no bugs found in iteration 6 scope. Both the AdminClients bug fix and the new badges feature are working correctly on backend and frontend."
+}

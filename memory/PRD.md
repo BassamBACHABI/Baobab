@@ -88,6 +88,12 @@ Marque retenue : **Baobab Cargo** (nom court « Baobab »).
 - **Landing** : phrase « point relais à Cotonou » retirée, section **avis 4-5★** ajoutée, tarifs dynamiques.
 - Vérifié testing agent : **17/17 backend PASS, frontend 100 %**, RBAC strict (OPERATOR 403 sur proxy & tarifs), isolation client 404, décimaux exacts. Commission proxy par défaut = 10 % (min 5 €), configurable.
 
+## Fait — Page Clients + pastilles non-lu (2026-06)
+- **Bug corrigé** : la page `/admin/clients` était un stub (toujours vide) → implémentée (liste des clients avec recherche, référence copiable, statut « Actif », date) via `GET /admin/clients`.
+- **Pastilles non-lu** : `GET /me/badges` & `GET /admin/badges` (+ `POST /me/support/seen`). Client : Support (messages staff non lus) + Achats (commandes à payer / à expédier). Admin : Support (fils en attente de réponse) + Achats proxy (REQUESTED/PAID, ADMIN only). Affichage sur les nav (client & admin).
+- **ClientHome** : salutation avec prénom ; « Frais à régler » calculé réellement (expéditions AWAITING_PAYMENT + proxy QUOTED) au lieu de 0 codé en dur + bouton « Régler ».
+- Vérifié testing agent : 10/10 backend, 100 % frontend, RBAC OK (OPERATOR proxy=0, CLIENT 403 sur /admin/badges).
+
 ## Backlog priorisé (prochains prompts, ne pas anticiper)
 - **Paiement expédition proxy explicite (2026-06)** : après réception au hub, la commande proxy affiche l'état de l'expédition + bouton « Payer l'expédition » ; l'envoi vers le Bénin reste bloqué (409) tant que l'expédition n'est pas payée (vérifié curl). Section « Achats pour moi » ajoutée à la landing.
 - **P1** : Paiement réel Mobile Money **KkiaPay** (MTN/Moov + carte, sandbox puis prod) — remplacer `SimulationProvider`.
