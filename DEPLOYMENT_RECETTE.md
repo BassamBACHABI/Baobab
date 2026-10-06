@@ -10,6 +10,8 @@ Atlas Free convient à une petite recette, avec stockage et capacité limités. 
 
 ## 2. Déployer l’API
 
+Utiliser la branche `codex/deploiement-recette-vercel` pour la recette. Conserver `main` comme branche de Production : Vercel traite les autres branches comme des déploiements Preview.
+
 Créer un projet Vercel relié au même dépôt GitHub, avec `backend` comme Root Directory. La fonction FastAPI est exportée par `server.py`; Vercel détecte le runtime Python et installe les dépendances de `backend/requirements.txt`.
 
 Variables obligatoires dans les environnements Vercel Preview et Production du projet API :
